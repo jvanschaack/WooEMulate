@@ -23,6 +23,7 @@ export type {
   WooEmulateStoreConfig,
   WooEmulateAuthConfig,
   WooEmulateAuthResult,
+  WooEmulateOAuthConfig,
   WooEmulateAdapter,
   WooEmulateOrder,
   WooEmulateOrderItem,

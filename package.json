@@ -1,7 +1,7 @@
 {
   "name": "wooemulate",
   "version": "0.1.0",
-  "description": "Turn any custom, headless, or serverless store into a WooCommerce REST API v3 facade for Pirate Ship, ShipStation, and more.",
+  "description": "A WooCommerce API compatibility layer that connects custom, headless, and serverless stores to services with compatible WooCommerce integrations.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -21,13 +21,13 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "test": "node tests/test.mjs",
+    "test": "node --test tests/test.mjs tests/regressions.mjs",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "woocommerce",
-    "pirateship",
-    "shipstation",
+    "compatibility",
+    "integrations",
     "ecommerce",
     "headless",
     "rest-api",

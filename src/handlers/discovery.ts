@@ -13,7 +13,7 @@ export function handleDiscovery(config: WooEmulateConfig, url: URL): Response {
     description: config.store.description || `${config.store.name} REST API`,
     url: origin,
     home: origin,
-    namespaces: ['wp/v2', 'wc/v1', 'wc/v2', 'wc/v3'],
+    namespaces: ['wc/v1', 'wc/v2', 'wc/v3'],
     authentication: {
       oauth1: false,
       application_passwords: false,
@@ -52,7 +52,7 @@ export function handleDiscovery(config: WooEmulateConfig, url: URL): Response {
       },
       '/wc/v3/orders': {
         namespace: 'wc/v3',
-        methods: ['GET', 'POST'],
+        methods: ['GET'],
         endpoints: [
           {
             methods: ['GET'],
@@ -62,16 +62,16 @@ export function handleDiscovery(config: WooEmulateConfig, url: URL): Response {
               page: { required: false },
             },
           },
-          { methods: ['POST'], args: {} },
         ],
         _links: { self: [{ href: `${origin}/wp-json/wc/v3/orders` }] },
       },
       '/wc/v3/orders/(?P<id>[\\d]+)': {
         namespace: 'wc/v3',
-        methods: ['GET', 'POST', 'PUT', 'DELETE'],
+        methods: ['GET', 'POST', 'PUT'],
         endpoints: [
           { methods: ['GET'], args: {} },
           { methods: ['PUT'], args: {} },
+          { methods: ['POST'], args: {} },
         ],
         _links: { self: [{ href: `${origin}/wp-json/wc/v3/orders` }] },
       },

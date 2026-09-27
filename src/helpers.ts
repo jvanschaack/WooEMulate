@@ -6,28 +6,17 @@
 import type { WooEmulateOrderStatus } from './types.js'
 
 /**
- * Deterministically turns an order_number or order ID string into a numeric 31-bit integer ID.
- * Strict WooCommerce clients (e.g. Pirate Ship) require numeric order IDs.
+ * Validates a positive 31-bit API ID without hashing or discarding characters.
+ * Persist a unique wooCommerceId for orders with arbitrary string IDs.
  */
 export function getWcNumericId(idOrNumber: string | number): number {
-  if (typeof idOrNumber === 'number' && Number.isInteger(idOrNumber) && idOrNumber > 0) {
-    return idOrNumber
+  const numericId = typeof idOrNumber === 'number'
+    ? idOrNumber
+    : /^[1-9]\d*$/.test(idOrNumber) ? Number(idOrNumber) : NaN
+  if (!Number.isInteger(numericId) || numericId < 1 || numericId > 2_147_483_647) {
+    throw new Error('Order IDs must be positive 31-bit integers. Persist a unique wooCommerceId and implement getOrderByWooCommerceId for string IDs.')
   }
-  const str = String(idOrNumber).trim()
-  const numDigits = str.replace(/\D/g, '')
-
-  // If the extracted digits form a reasonable ID, use it directly
-  if (numDigits.length >= 3 && numDigits.length <= 9) {
-    return parseInt(numDigits, 10)
-  }
-
-  // Fallback: 31-bit hash of the string
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash << 5) - hash + str.charCodeAt(i)
-    hash |= 0
-  }
-  return (Math.abs(hash) % 1_000_000) + 1_000
+  return numericId
 }
 
 /**
@@ -67,6 +56,7 @@ export function mapToWcStatus(status?: string | null): WooEmulateOrderStatus {
  */
 export function mapFromWcStatus(wcStatus: string): WooEmulateOrderStatus {
   const s = wcStatus.toLowerCase().trim()
+  if (s === 'pending') return 'pending'
   if (s === 'completed') return 'completed'
   if (s === 'processing') return 'processing'
   if (s === 'cancelled') return 'cancelled'

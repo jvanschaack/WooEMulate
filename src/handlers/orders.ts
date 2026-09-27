@@ -5,6 +5,7 @@
 
 import { authenticateRequest, wcErrorResponse } from '../auth.js'
 import { mapFromWcStatus } from '../helpers.js'
+import { findOrderByApiId } from '../order-lookup.js'
 import { serializeWcOrder } from '../serializer.js'
 import type { WooEmulateConfig, WooEmulateListOrdersParams } from '../types.js'
 
@@ -103,7 +104,7 @@ async function handleGetSingleOrder(
   orderIdParam: string
 ): Promise<Response> {
   try {
-    const order = await config.adapter.getOrder(orderIdParam)
+    const order = await findOrderByApiId(config, orderIdParam)
     if (!order) {
       return wcErrorResponse('woocommerce_rest_order_invalid_id', 'Invalid order ID.', 404)
     }
@@ -131,7 +132,7 @@ async function handleUpdateSingleOrder(
   orderIdParam: string
 ): Promise<Response> {
   try {
-    const order = await config.adapter.getOrder(orderIdParam)
+    const order = await findOrderByApiId(config, orderIdParam)
     if (!order) {
       return wcErrorResponse('woocommerce_rest_order_invalid_id', 'Invalid order ID.', 404)
     }

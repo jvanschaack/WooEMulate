@@ -1,10 +1,11 @@
 /**
  * WooEMulate Shipment Tracking Handler
- * Emulates the WooCommerce Shipment Tracking official extension endpoint used by Pirate Ship & ShipStation.
+ * Implements a subset of the WooCommerce Shipment Tracking extension API.
  */
 
 import { authenticateRequest, wcErrorResponse } from '../auth.js'
 import { detectCarrier, getTrackingUrl } from '../helpers.js'
+import { findOrderByApiId } from '../order-lookup.js'
 import type { WooEmulateConfig } from '../types.js'
 
 export async function handleShipmentTracking(
@@ -21,7 +22,12 @@ export async function handleShipmentTracking(
     )
   }
 
-  const order = await config.adapter.getOrder(orderIdParam)
+  let order
+  try {
+    order = await findOrderByApiId(config, orderIdParam)
+  } catch {
+    return wcErrorResponse('woocommerce_rest_order_error', 'Failed to retrieve order.', 500)
+  }
   if (!order) {
     return wcErrorResponse('woocommerce_rest_order_invalid_id', 'Invalid order ID.', 404)
   }
@@ -68,7 +74,7 @@ export async function handleShipmentTracking(
     })
   }
 
-  // 2. POST shipment-trackings (Created by Pirate Ship / ShipStation)
+  // 2. POST shipment-trackings
   if (request.method === 'POST') {
     try {
       const body = await request.json().catch(() => ({}))
