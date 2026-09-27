@@ -51,6 +51,8 @@ export interface WooEmulateTracking {
 
 export interface WooEmulateOrder {
   id: string | number
+  /** Stable, unique, persisted API ID. Required when id is not a positive numeric ID. */
+  wooCommerceId?: number
   orderNumber: string
   status: WooEmulateOrderStatus | string
   createdAt: string | Date
@@ -120,13 +122,16 @@ export interface WooEmulateAdapter {
    */
   getOrder(idOrNumber: string | number): Promise<WooEmulateOrder | null>
 
+  /** Resolve a persisted API ID to its original order. Required for mapped string IDs. */
+  getOrderByWooCommerceId?(id: number): Promise<WooEmulateOrder | null>
+
   /**
    * Optional hook when an order status is updated by a client (e.g. mark completed).
    */
   updateOrderStatus?(orderId: string | number, status: WooEmulateOrderStatus): Promise<void>
 
   /**
-   * Optional hook when a shipping client pushes a tracking number (e.g. Pirate Ship or ShipStation).
+   * Optional hook when a compatible client pushes a tracking number.
    */
   onShipmentTrackingCreated?(
     orderId: string | number,
@@ -158,12 +163,27 @@ export interface WooEmulateAuthResult {
   status?: number
 }
 
+export interface WooEmulateOAuthConfig {
+  /** Exact HTTPS callback URLs trusted to receive the configured API credentials. */
+  allowedCallbackUrls: string[]
+  /** Exact HTTPS URLs trusted to receive the connection result. */
+  allowedReturnUrls: string[]
+  /**
+   * Authenticate the current store owner and check their permission to connect apps.
+   * Called for both the consent page and approval POST. Fail closed when unauthenticated.
+   * The handler also requires a same-origin approval POST to prevent cross-site requests.
+   */
+  authorize(request: Request, connection: WooEmulateOAuthAuthorizedPayload): Promise<boolean>
+}
+
 export interface WooEmulateConfig {
   store: WooEmulateStoreConfig
   auth:
     | WooEmulateAuthConfig
     | ((request: Request) => Promise<WooEmulateAuthConfig | WooEmulateAuthResult>)
   adapter: WooEmulateAdapter
+  /** One-click authorization is disabled unless explicitly configured. */
+  oauth?: WooEmulateOAuthConfig
   basePath?: string
   cors?: boolean | { origins?: string[]; allowHeaders?: string[] }
 }

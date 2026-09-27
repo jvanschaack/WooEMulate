@@ -86,7 +86,7 @@ export function createWooEmulate(config: WooEmulateConfig): WooEmulateInstance {
             namespace: cleanPath.replace('/wp-json/', ''),
             routes: {
               [`${cleanPath}/orders`]: {
-                endpoints: [{ methods: ['GET', 'POST'] }],
+                endpoints: [{ methods: ['GET'] }],
               },
               [`${cleanPath}/system_status`]: {
                 endpoints: [{ methods: ['GET'] }],

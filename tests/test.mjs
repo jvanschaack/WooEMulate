@@ -6,6 +6,7 @@ import { createWooEmulate } from '../dist/index.js'
 const mockOrders = [
   {
     id: 'ord_sample_9852',
+    wooCommerceId: 9852,
     orderNumber: 'STORE-9852',
     status: 'processing',
     createdAt: '2026-03-01T12:00:00Z',
@@ -74,10 +75,12 @@ const emulator = createWooEmulate({
         mockOrders.find(
           (o) =>
             o.id === idOrNumber ||
-            o.orderNumber === idOrNumber ||
-            String(idOrNumber).includes('9852')
+            o.orderNumber === idOrNumber
         ) || null
       )
+    },
+    async getOrderByWooCommerceId(id) {
+      return mockOrders.find((order) => order.wooCommerceId === id) || null
     },
     async updateOrderStatus(id, status) {
       lastStatusUpdate = { id, status }
@@ -159,7 +162,7 @@ test('4. HTTP Basic Auth works', async () => {
 
 test('5. Single order fetch /orders/:id', async () => {
   const req = new Request(
-    'https://examplecoffee.com/wp-json/wc/v3/orders/STORE-9852?consumer_key=ck_test_123&consumer_secret=cs_test_456'
+    'https://examplecoffee.com/wp-json/wc/v3/orders/9852?consumer_key=ck_test_123&consumer_secret=cs_test_456'
   )
   const res = await emulator.handleRequest(req)
 
@@ -176,7 +179,7 @@ test('6. POST shipment-trackings saves tracking and updates status', async () =>
   }
 
   const req = new Request(
-    'https://examplecoffee.com/wp-json/wc/v3/orders/ord_sample_9852/shipment-trackings?consumer_key=ck_test_123&consumer_secret=cs_test_456',
+    'https://examplecoffee.com/wp-json/wc/v3/orders/9852/shipment-trackings?consumer_key=ck_test_123&consumer_secret=cs_test_456',
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

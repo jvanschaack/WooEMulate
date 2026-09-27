@@ -10,7 +10,7 @@ export function serializeWcOrder(
   order: WooEmulateOrder,
   storeConfig: WooEmulateStoreConfig
 ): Record<string, any> {
-  const numericId = getWcNumericId(order.orderNumber || order.id)
+  const numericId = getWcNumericId(order.wooCommerceId ?? order.id)
   const wcStatus = mapToWcStatus(order.status)
   const currency = order.currency || storeConfig.currency || 'USD'
 
