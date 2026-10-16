@@ -70,6 +70,47 @@ function isPrivateIpv4(host: string): boolean {
   )
 }
 
+/** Expands an IPv6 literal into eight 16-bit groups, or returns null when it is not one. */
+function parseIpv6(host: string): number[] | null {
+  let text = host
+  const embedded = text.match(/^(.*:)(\d+\.\d+\.\d+\.\d+)$/)
+  if (embedded) {
+    const octets = embedded[2].split('.').map(Number)
+    if (octets.some((octet) => octet > 255)) return null
+    text = `${embedded[1]}${((octets[0] << 8) | octets[1]).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`
+  }
+  const halves = text.split('::')
+  if (halves.length > 2) return null
+  const head = halves[0] ? halves[0].split(':') : []
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : []
+  const missing = 8 - head.length - tail.length
+  if (halves.length === 1 ? missing !== 0 : missing < 1) return null
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail]
+  if (groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))) return null
+  return groups.map((group) => parseInt(group, 16))
+}
+
+function ipv4FromGroups(high: number, low: number): string {
+  return [high >> 8, high & 0xff, low >> 8, low & 0xff].join('.')
+}
+
+/** Blocks IPv6 addresses that are local or that embed an IPv4 address WooEMulate cannot vet. */
+function isBlockedIpv6(groups: number[]): boolean {
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = groups
+  if (groups.slice(0, 6).every((group) => group === 0)) return true // ::, ::1, IPv4-compatible ::/96
+  if (groups.slice(0, 5).every((group) => group === 0) && g5 === 0xffff) return true // IPv4-mapped
+  if ((g0 & 0xfe00) === 0xfc00) return true // unique local fc00::/7
+  if ((g0 & 0xffc0) === 0xfe80 || (g0 & 0xffc0) === 0xfec0) return true // link-local, site-local
+  if ((g0 & 0xff00) === 0xff00) return true // multicast
+  if (g0 === 0x64 && g1 === 0xff9b) {
+    // NAT64: 64:ff9b::/96 embeds an IPv4 address; 64:ff9b:1::/48 is for local use.
+    return g2 !== 0 || g3 !== 0 || g4 !== 0 || g5 !== 0 || isPrivateIpv4(ipv4FromGroups(g6, g7))
+  }
+  if (g0 === 0x2002) return isPrivateIpv4(ipv4FromGroups(g1, g2)) // 6to4 embeds an IPv4 address
+  if (g0 === 0x2001 && g1 === 0) return true // Teredo
+  return false
+}
+
 /**
  * Default delivery URL policy: HTTPS, no credentials, and no localhost, single-label,
  * private, loopback, link-local, or other internal hosts. Hostnames that resolve to private
@@ -77,15 +118,16 @@ function isPrivateIpv4(host: string): boolean {
  */
 export function isSafeDeliveryUrl(url: URL): boolean {
   if (url.protocol !== 'https:' || url.username || url.password) return false
-  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  // A trailing dot makes a name fully qualified ("localhost.") without changing where it points.
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, '').replace(/\.+$/, '')
   if (!host) return false
   if (host.includes(':')) {
-    // IPv6 literal: block unspecified, loopback, unique-local, link-local, and IPv4-mapped.
-    return !(host === '::' || host === '::1' || /^f[cd]/.test(host) || /^fe[89ab]/.test(host) || host.startsWith('::ffff:'))
+    const groups = parseIpv6(host)
+    return groups !== null && !isBlockedIpv6(groups)
   }
   if (/^\d+\.\d+\.\d+\.\d+$/.test(host)) return !isPrivateIpv4(host)
   if (!host.includes('.')) return false
-  return !/(^|\.)(localhost|local|internal|home\.arpa|localdomain)$/.test(host)
+  return !/(^|\.)(localhost|local|internal|home\.arpa|localdomain|cluster\.local)$/.test(host)
 }
 
 export async function deliveryUrlAllowed(config: WooEmulateConfig, value: string): Promise<boolean> {

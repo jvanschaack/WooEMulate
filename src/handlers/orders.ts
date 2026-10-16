@@ -143,8 +143,8 @@ export async function updateOrder(ctx: RouteContext): Promise<Response> {
       })
     }
 
-    // Return the refreshed order
-    const updated = await config.adapter.getOrder(order.id)
+    // Return the refreshed order, re-resolved by API ID so it is verified to be the same order.
+    const updated = await findOrderByApiId(config, ctx.params.id)
     return jsonResponse(serializeWcOrder(updated || order, config.store, orderSerializeOptions(ctx, dp)))
   } catch (err) {
     return wcErrorResponse(

@@ -61,7 +61,13 @@ export function createWooEmulate(config: WooEmulateConfig): WooEmulateInstance {
     method: HttpMethod,
     action: RouteAction
   ): Promise<{ response: Response } | { key: RouteContext['key'] }> {
-    const outcome = await authenticateApi(request, config)
+    let outcome: Awaited<ReturnType<typeof authenticateApi>>
+    try {
+      outcome = await authenticateApi(request, config)
+    } catch {
+      // A failing key store, auth resolver, or nonce store must still produce a JSON error.
+      return { response: wcErrorResponse('woocommerce_rest_authentication_error', 'Authentication could not be completed.', 500) }
+    }
     if (outcome.status === 'error') {
       return { response: wcErrorResponse(outcome.code, outcome.message, outcome.httpStatus, outcome.headers) }
     }

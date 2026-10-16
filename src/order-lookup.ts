@@ -17,8 +17,12 @@ export async function findOrderByApiId(
     ? await config.adapter.getOrderByWooCommerceId(apiId)
     : await config.adapter.getOrder(apiId) ?? await config.adapter.getOrder(String(apiId))
 
-  if (!order || getWcNumericId(order.wooCommerceId ?? order.id) !== apiId) return null
-  return order
+  if (!order) return null
+  try {
+    return getWcNumericId(order.wooCommerceId ?? order.id) === apiId ? order : null
+  } catch {
+    return null
+  }
 }
 
 /**

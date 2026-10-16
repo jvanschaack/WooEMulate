@@ -52,9 +52,21 @@ const TYPES = ['simple', 'grouped', 'external', 'variable'] as const
 const READ_ONLY = new Set([
   'id', 'permalink', 'date_created', 'date_created_gmt', 'date_modified', 'date_modified_gmt', 'price', 'price_html',
   'on_sale', 'purchasable', 'total_sales', 'backorders_allowed', 'backordered', 'average_rating', 'rating_count',
-  'related_ids', 'variations', 'grouped_products', 'has_options', 'parent_id', '_links', 'in_stock', 'low_stock_amount',
+  'related_ids', 'variations', 'has_options', '_links',
 ])
 const WRITABLE = new Set(['manage_stock', 'stock_quantity', 'stock_status', 'regular_price', 'sale_price'])
+
+/** JSON with object keys sorted, so echoed values compare equal regardless of key order. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`)
+      .join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'undefined'
+}
 
 function catalog(ctx: RouteContext): WooEmulateProductAdapter {
   return ctx.config.adapter.products!
@@ -62,6 +74,14 @@ function catalog(ctx: RouteContext): WooEmulateProductAdapter {
 
 function options(ctx: RouteContext) {
   return { version: ctx.version, apiBase: `${ctx.apiBase}/${ctx.namespace}` }
+}
+
+function sameApiId(item: { id: string | number; wooCommerceId?: number }, apiId: number): boolean {
+  try {
+    return productApiId(item) === apiId
+  } catch {
+    return false
+  }
 }
 
 function invalidProduct(): Response {
@@ -106,10 +126,14 @@ function readStockPriceChanges(
   // Writable fields that repeat the current value are not changes. Otherwise an echoed
   // `stock_status` could overwrite the status implied by a new stock quantity.
   input = Object.fromEntries(
-    Object.entries(input).filter(
-      ([key, value]) => !WRITABLE.has(key) || JSON.stringify(value) !== JSON.stringify(current[key])
-    )
+    Object.entries(input).filter(([key, value]) => !WRITABLE.has(key) || stableJson(value) !== stableJson(current[key]))
   )
+  // v1/v2 clients write stock state through the boolean `in_stock`.
+  if (input.in_stock !== undefined && 'in_stock' in current && input.stock_status === undefined) {
+    const inStock = parseBoolean(errors, 'in_stock', input.in_stock)
+    if (inStock !== undefined && inStock !== current.in_stock) changes.stockStatus = inStock ? 'instock' : 'outofstock'
+    delete input.in_stock
+  }
   const manage = input.manage_stock === 'parent' ? undefined : parseBoolean(errors, 'manage_stock', input.manage_stock)
   if (manage !== undefined) changes.manageStock = manage
   if (input.stock_quantity !== undefined) {
@@ -128,7 +152,7 @@ function readStockPriceChanges(
 
   for (const [key, value] of Object.entries(input)) {
     if (WRITABLE.has(key) || READ_ONLY.has(key) || key === 'force' || key === 'context') continue
-    if (JSON.stringify(value) !== JSON.stringify(current[key])) {
+    if (stableJson(value) !== stableJson(current[key])) {
       errors.add(key, `${key} cannot be changed through this API; only stock and prices can be updated.`)
     }
   }
@@ -185,9 +209,13 @@ export async function updateProduct(ctx: RouteContext): Promise<Response> {
     const current = serializeWcProduct(product, ctx.config.store, options(ctx))
     const changes = readStockPriceChanges(await ctx.input(), current)
     if (changes instanceof Response) return changes
-    const updated = Object.keys(changes).length
-      ? (await catalog(ctx).updateProduct!(product, changes)) || (await catalog(ctx).getProduct(productApiId(product)))
-      : product
+    const apiId = productApiId(product)
+    let updated: WooEmulateProduct | null = product
+    if (Object.keys(changes).length) {
+      const returned = await catalog(ctx).updateProduct!(product, changes)
+      // Use the returned or re-read product only when it is verifiably the same product.
+      updated = returned && sameApiId(returned, apiId) ? returned : await findByApiId(String(apiId), (id) => catalog(ctx).getProduct(id))
+    }
     return jsonResponse(serializeWcProduct(updated || product, ctx.config.store, options(ctx)))
   } catch (err) {
     return wcErrorResponse('woocommerce_rest_product_update_error', errorMessage(err, 'Failed to update product.'), 500)
@@ -246,10 +274,14 @@ export async function updateVariation(ctx: RouteContext): Promise<Response> {
     const current = serializeWcVariation(variation, product, ctx.config.store, options(ctx))
     const changes = readStockPriceChanges(await ctx.input(), current)
     if (changes instanceof Response) return changes
-    const updated = Object.keys(changes).length
-      ? (await catalog(ctx).updateVariation!(product, variation, changes)) ||
-        (await catalog(ctx).getVariation!(product, productApiId(variation)))
-      : variation
+    const apiId = productApiId(variation)
+    let updated: WooEmulateProductVariation | null = variation
+    if (Object.keys(changes).length) {
+      const returned = await catalog(ctx).updateVariation!(product, variation, changes)
+      updated = returned && sameApiId(returned, apiId)
+        ? returned
+        : await findByApiId(String(apiId), (id) => catalog(ctx).getVariation!(product, id))
+    }
     return jsonResponse(serializeWcVariation(updated || variation, product, ctx.config.store, options(ctx)))
   } catch (err) {
     return wcErrorResponse('woocommerce_rest_variation_update_error', errorMessage(err, 'Failed to update variation.'), 500)

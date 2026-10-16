@@ -7,7 +7,9 @@ import type { WooEmulateApiKey, WooEmulateConfig, WooEmulateKeyPermissions, WooE
 
 const privateHeaders = {
   'Cache-Control': 'no-store',
-  'Referrer-Policy': 'no-referrer',
+  // `no-referrer` would make browsers send `Origin: null` on the approval POST, failing the
+  // same-origin check. `same-origin` keeps the referrer off cross-origin requests.
+  'Referrer-Policy': 'same-origin',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "frame-ancestors 'none'; form-action 'self'; base-uri 'none'",
 }

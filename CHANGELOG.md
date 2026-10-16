@@ -71,3 +71,32 @@ This release implements phases 0–4 of the [roadmap](docs/roadmap.md). Several 
   - An allowlisted HTTP `return_url` is accepted.
 - Discovery reports `authentication: []` and lists every enabled route.
 - `auth` is optional when `apiKeys` is configured. `createWooEmulate` throws when neither is set.
+
+### Fixed
+
+- **One-click approval in browsers.** The consent page sent `Referrer-Policy: no-referrer`, so browsers sent `Origin: null` on the approval POST and approval always failed. It now sends `same-origin`. This bug predates this release.
+- **Webhook delivery URL policy:**
+  - Trailing-dot hostnames (`localhost.`, `*.internal.`) are now blocked.
+  - Blocked IPv6 forms: IPv4-compatible, NAT64 and 6to4 addresses that embed private IPv4, Teredo, site-local, multicast, and `*.cluster.local`.
+- **Order updates.** The returned order is re-read by API ID and verified, so it can no longer return a different order whose number matches.
+- **Product updates:**
+  - The returned or re-read product is verified the same way.
+  - `in_stock` (v1/v2) maps to the stock status.
+  - Changes to `low_stock_amount`, `parent_id`, or `grouped_products` are rejected instead of ignored.
+  - Echoed objects compare regardless of key order.
+- **List parameters:**
+  - The indexed form (`include[0]=…`) is honored, as produced by the PHP client and the JS client's OAuth query strings.
+  - An empty list is ignored instead of matching nothing.
+- **Offset paging.** Responses link to the next `offset`; following `rel="next"` previously repeated the same rows.
+- **Refund line items:**
+  - Repeated entries are merged before the quantity check.
+  - Shipping and fee line IDs are accepted.
+  - Requests are refused when the order total is unknown.
+- **Report ranges.** Impossible dates, years outside 1970–9998, and spans over 3660 days return 400; previously they could crash or consume large amounts of memory.
+- **Sales report.** `total_tax` includes shipping tax, as WooCommerce reports.
+- **OAuth 1.0a.** The `realm` header parameter is ignored when verifying signatures.
+- **Error handling:**
+  - Errors thrown by key stores, auth resolvers, or nonce stores now produce JSON errors.
+  - Orders without a valid API ID return 404 instead of 500.
+- **Integer parameters.** These must be safe integers.
+- **DST gaps.** Wall-clock times in a DST gap resolve forward, as in PHP.

@@ -82,7 +82,12 @@ export function wallTimeToDate(text: string, timeZone: string): Date | null {
   if (isNaN(asUtc)) return null
   if (timeZone === 'UTC') return new Date(asUtc)
   const first = asUtc - zoneOffsetMs(new Date(asUtc), timeZone)
-  return new Date(asUtc - zoneOffsetMs(new Date(first), timeZone))
+  const second = asUtc - zoneOffsetMs(new Date(first), timeZone)
+  const wall = `${y}-${mo}-${d}T${h.padStart(2, '0')}:${mi.padStart(2, '0')}:${s.padStart(2, '0')}`
+  if (formatLocal(new Date(second), timeZone) === wall) return new Date(second)
+  if (formatLocal(new Date(first), timeZone) === wall) return new Date(first)
+  // The wall time falls in a DST gap: move forward, as PHP does (02:30 becomes 03:30).
+  return new Date(Math.max(first, second))
 }
 
 /**

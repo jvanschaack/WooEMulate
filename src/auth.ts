@@ -148,6 +148,7 @@ async function findKey(
   }
   if (!config.auth) return null
   const resolved = typeof config.auth === 'function' ? await config.auth(request) : config.auth
+  if (!resolved || typeof resolved !== 'object') return null
   if ('authenticated' in resolved) {
     const result = resolved as WooEmulateAuthResult
     return result.authenticated
@@ -183,7 +184,7 @@ export async function authenticateApi(request: Request, config: WooEmulateConfig
   // A custom resolver may authenticate requests that carry no WooCommerce credentials.
   if (typeof config.auth === 'function') {
     const resolved = await config.auth(request)
-    if ('authenticated' in resolved) {
+    if (resolved && typeof resolved === 'object' && 'authenticated' in resolved) {
       const result = resolved as WooEmulateAuthResult
       return result.authenticated
         ? { status: 'ok', key: { keyId: 1, permissions: 'read_write' } }
@@ -209,6 +210,8 @@ function readOAuthHeader(request: Request): Record<string, string> {
   if (!/^oauth\s/i.test(header)) return {}
   const params: Record<string, string> = {}
   for (const match of header.slice(6).matchAll(/([\w-]+)="([^"]*)"/g)) {
+    // Only oauth_* parameters are signed; `realm` and others are ignored, as in WooCommerce.
+    if (!match[1].startsWith('oauth_')) continue
     try {
       params[match[1]] = decodeURIComponent(match[2])
     } catch {

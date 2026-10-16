@@ -614,6 +614,7 @@ export interface WooEmulateRefundInput {
   refundPayment: boolean
   /** WooCommerce `api_restock`: restock refunded items. Defaults to true. */
   restockItems: boolean
+  /** Refunded items by order item ID. IDs may refer to line items, shipping lines, or fee lines. */
   lineItems: Array<{ lineItemId: number; quantity: number; refundTotalCents: number; refundTaxCents: number }>
   refundedBy?: number
 }
@@ -713,7 +714,9 @@ export interface WooEmulateAdapter {
 
   /**
    * Creates a refund. Enables `POST /orders/:id/refunds`. This can move money: the host decides
-   * whether `refundPayment` returns funds through its payment gateway.
+   * whether `refundPayment` returns funds through its payment gateway. The library checks the
+   * amount against refunds reported by `listOrderRefunds` or `order.refunds`; when neither is
+   * available, enforce the remaining refundable amount here.
    */
   createOrderRefund?(orderId: string | number, refund: WooEmulateRefundInput): Promise<WooEmulateRefund>
 

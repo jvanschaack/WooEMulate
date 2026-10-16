@@ -121,7 +121,7 @@ export function parseInteger(
 ): number | undefined {
   if (raw === undefined || raw === null || raw === '') return undefined
   const value = typeof raw === 'number' ? raw : /^-?\d+$/.test(String(raw).trim()) ? Number(raw) : NaN
-  if (!Number.isInteger(value)) {
+  if (!Number.isSafeInteger(value)) {
     errors.add(name, `${name} is not of type integer.`)
     return undefined
   }
@@ -165,11 +165,19 @@ export function parseEnum<T extends string>(
   return value as T
 }
 
-/** Reads `name=a,b` and `name[]=a&name[]=b` forms from the query string. */
+/**
+ * Reads `name=a,b`, `name[]=a&name[]=b`, and `name[0]=a&name[1]=b` forms from the query string.
+ * The indexed form is what PHP's `http_build_query` (used by the official PHP client) produces.
+ * Returns undefined when no values are given, as WooCommerce ignores an empty list.
+ */
 export function readList(url: URL, name: string): string[] | undefined {
-  const values = [...url.searchParams.getAll(name), ...url.searchParams.getAll(`${name}[]`)]
-  if (values.length === 0) return undefined
-  return values.flatMap((value) => value.split(',')).map((value) => value.trim()).filter(Boolean)
+  const indexed = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\[\\d*\\]$`)
+  const values: string[] = []
+  for (const [key, value] of url.searchParams) {
+    if (key === name || indexed.test(key)) values.push(value)
+  }
+  const list = values.flatMap((value) => value.split(',')).map((value) => value.trim()).filter(Boolean)
+  return list.length ? list : undefined
 }
 
 export function parseIdList(errors: ParamErrors, url: URL, name: string): number[] | undefined {
@@ -272,14 +280,22 @@ export function paginationHeaders(
   for (const name of [...base.searchParams.keys()]) {
     if (isTransportParam(name)) base.searchParams.delete(name)
   }
-  const link = (rel: string, target: number) => {
+  const link = (rel: string, name: 'page' | 'offset', target: number) => {
     const url = new URL(base.href)
-    url.searchParams.set('page', String(target))
+    url.searchParams.set(name, String(target))
     return `<${url.href}>; rel="${rel}"`
   }
   const links: string[] = []
-  if (page > 1) links.push(link('prev', Math.max(1, Math.min(page - 1, maxPages))))
-  if (maxPages > page) links.push(link('next', page + 1))
+  const rawOffset = ctx.url.searchParams.get('offset')
+  if (rawOffset !== null && /^\d+$/.test(rawOffset)) {
+    // Offset requests page by offset; changing `page` would leave the offset, and the rows, unchanged.
+    const offset = Number(rawOffset)
+    if (offset > 0) links.push(link('prev', 'offset', Math.max(0, offset - perPage)))
+    if (offset + perPage < total) links.push(link('next', 'offset', offset + perPage))
+  } else {
+    if (page > 1) links.push(link('prev', 'page', Math.max(1, Math.min(page - 1, maxPages))))
+    if (maxPages > page) links.push(link('next', 'page', page + 1))
+  }
   const headers: Record<string, string> = {
     'X-WP-Total': String(total),
     'X-WP-TotalPages': String(maxPages),

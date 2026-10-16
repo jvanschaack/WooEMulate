@@ -105,9 +105,16 @@ export async function createRefund(ctx: RouteContext): Promise<Response> {
   const restockItems = parseBoolean(errors, 'api_restock', input.api_restock) ?? true
   const refundedBy = parseInteger(errors, 'refunded_by', input.refunded_by, { min: 0 })
 
-  // Order line items are matched by the IDs the order response exposes.
-  const orderLines = serializeWcOrder(order, ctx.config.store).line_items as Array<{ id: number; quantity: number }>
-  const lineItems: WooEmulateRefundInput['lineItems'] = []
+  // Refund entries reference the item IDs the order response exposes: line items, and also
+  // shipping and fee lines (no quantity), as WooCommerce allows. Repeated IDs are merged so the
+  // quantity check covers the whole request.
+  const serialized = serializeWcOrder(order, ctx.config.store)
+  const orderLines = serialized.line_items as Array<{ id: number; quantity: number }>
+  const otherLineIds = new Set<number>([
+    ...(serialized.shipping_lines as Array<{ id: number }>).map((line) => line.id),
+    ...(serialized.fee_lines as Array<{ id: number }>).map((line) => line.id),
+  ])
+  const merged = new Map<number, WooEmulateRefundInput['lineItems'][number] & { index: number }>()
   if (input.line_items !== undefined && !Array.isArray(input.line_items)) errors.add('line_items', 'line_items is not of type array.')
   for (const [index, item] of (Array.isArray(input.line_items) ? input.line_items : []).entries()) {
     const lineItemId = parseInteger(errors, `line_items[${index}][id]`, item?.id, { min: 1 })
@@ -120,16 +127,30 @@ export async function createRefund(ctx: RouteContext): Promise<Response> {
       0
     )
     if (lineItemId === undefined) continue
-    const line = orderLines.find((row) => row.id === lineItemId)
-    if (!line) errors.add(`line_items[${index}][id]`, 'Invalid line item ID.')
-    else if (quantity > line.quantity) errors.add(`line_items[${index}][quantity]`, 'Quantity exceeds the ordered quantity.')
-    lineItems.push({ lineItemId, quantity, refundTotalCents, refundTaxCents })
+    const previous = merged.get(lineItemId)
+    merged.set(lineItemId, {
+      index: previous?.index ?? index,
+      lineItemId,
+      quantity: (previous?.quantity ?? 0) + quantity,
+      refundTotalCents: (previous?.refundTotalCents ?? 0) + refundTotalCents,
+      refundTaxCents: (previous?.refundTaxCents ?? 0) + refundTaxCents,
+    })
+  }
+  const lineItems: WooEmulateRefundInput['lineItems'] = []
+  for (const { index, ...item } of merged.values()) {
+    const line = orderLines.find((row) => row.id === item.lineItemId)
+    if (!line && !otherLineIds.has(item.lineItemId)) errors.add(`line_items[${index}][id]`, 'Invalid line item ID.')
+    else if (line && item.quantity > line.quantity) {
+      errors.add(`line_items[${index}][quantity]`, 'Quantity exceeds the ordered quantity.')
+    }
+    lineItems.push(item)
   }
   if (errors.any) return errors.response()
 
   const amountCents =
     typeof amount === 'number' ? amount : lineItems.reduce((sum, item) => sum + item.refundTotalCents + item.refundTaxCents, 0)
   if (amountCents <= 0) return refundError('Refund amount must be greater than zero.')
+  if (!Number.isFinite(order.totalCents)) return refundError('Invalid refund amount.')
 
   try {
     const refunded = (await existingRefunds(ctx, order)).reduce((sum, refund) => sum + refund.amountCents, 0) ||

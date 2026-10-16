@@ -112,6 +112,22 @@ interface ReportRange {
   groupBy: 'day' | 'month'
 }
 
+/** About ten years of daily buckets. */
+const MAX_REPORT_DAYS = 3660
+
+function isCalendarDate(value: string): boolean {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!match) return false
+  const [y, m, d] = match.slice(1).map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d))
+  // Years stay within 1970-9998 so the exclusive end date (one day later) still has four digits.
+  return y >= 1970 && y <= 9998 && date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d
+}
+
+function dayNumber(ymd: string): number {
+  return Date.parse(`${ymd}T00:00:00Z`) / 86_400_000
+}
+
 function addDays(ymd: string, days: number): string {
   const [y, m, d] = ymd.split('-').map(Number)
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10)
@@ -125,7 +141,7 @@ function reportRange(ctx: RouteContext, errors: ParamErrors): ReportRange | null
   const dateMin = query.get('date_min')
   const dateMax = query.get('date_max')
   for (const [name, value] of [['date_min', dateMin], ['date_max', dateMax]] as const) {
-    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) errors.add(name, `${name} must be a date in YYYY-MM-DD format.`)
+    if (value && !isCalendarDate(value)) errors.add(name, `${name} must be a valid date in YYYY-MM-DD format.`)
   }
   if (errors.any) return null
 
@@ -153,12 +169,22 @@ function reportRange(ctx: RouteContext, errors: ParamErrors): ReportRange | null
     last = today
   }
 
+  if (dayNumber(last) - dayNumber(first) > MAX_REPORT_DAYS) {
+    errors.add('date_max', `The report range cannot exceed ${MAX_REPORT_DAYS} days.`)
+    return null
+  }
   const buckets: string[] = []
   for (let day = first; day <= last; day = addDays(day, 1)) buckets.push(day)
   if ((dateMin || dateMax) && buckets.length > 31) groupBy = 'month'
+  const start = wallTimeToDate(`${first}T00:00:00`, timeZone)
+  const end = wallTimeToDate(`${addDays(last, 1)}T00:00:00`, timeZone)
+  if (!start || !end) {
+    errors.add('date_max', 'Invalid report range.')
+    return null
+  }
   return {
-    start: wallTimeToDate(`${first}T00:00:00`, timeZone)!,
-    end: wallTimeToDate(`${addDays(last, 1)}T00:00:00`, timeZone)!,
+    start,
+    end,
     buckets: groupBy === 'month' ? [...new Set(buckets.map((day) => day.slice(0, 7)))] : buckets,
     groupBy,
   }
@@ -249,7 +275,7 @@ export async function salesReport(ctx: RouteContext): Promise<Response> {
         average_sales: money(Math.round(netSales / Math.max(1, range.buckets.length))),
         total_orders: orders.length,
         total_items: items,
-        total_tax: money(cartTax),
+        total_tax: money(cartTax + shippingTax),
         total_shipping: money(shipping),
         total_refunds: refunds / 100,
         total_discount: money(discount),
