@@ -39,6 +39,26 @@ Configure `{"url": "http://127.0.0.1:8787/", "consumer_key": "ck_fixture", "cons
 
 Run `--discover`, set `"selected": true` on the orders stream schema, and then sync with `--catalog`. Expect one `RECORD` per order across `wc/v2/orders` pages, followed by a `STATE` bookmark.
 
+## Airbyte `source-woocommerce`
+
+Tested with manifest 5.11.1 from `airbytehq/airbyte` (`airbyte-integrations/connectors/source-woocommerce/manifest.yaml`), run by `airbyte-cdk`'s `source-declarative-manifest` entry point.
+
+The connector requires HTTPS, so start the dev server with a throwaway certificate and point Python at that certificate. Certificate verification stays enabled:
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" -keyout key.pem -out cert.pem
+TLS_KEY_FILE=key.pem TLS_CERT_FILE=cert.pem node scripts/dev-server.mjs 8443 250
+
+python3 -m venv venv && venv/bin/pip install airbyte-cdk
+# config.json: {"__injected_declarative_manifest": <manifest.yaml as JSON>, "shop": "localhost:8443",
+#               "api_key": "ck_fixture", "api_secret": "cs_fixture", "start_date": "2025-12-01"}
+REQUESTS_CA_BUNDLE=cert.pem venv/bin/source-declarative-manifest check --config config.json
+REQUESTS_CA_BUNDLE=cert.pem venv/bin/source-declarative-manifest read --config config.json --catalog catalog.json
+```
+
+Use a configured catalog that selects the `orders` stream with `sync_mode: incremental` and `cursor_field: ["date_modified_gmt"]`. The check calls `/system_status/tools`. The read should emit one record per order across `modified_after`/`modified_before` windows and `offset` pages. Rerunning with `--state` and the last state message should emit no records.
+
 ## Hosted services
 
 Hosted services need a public HTTPS deployment of your own store. For each one, record:

@@ -366,6 +366,7 @@ Checked manually against [`scripts/dev-server.mjs`](scripts/dev-server.mjs) in O
 | --- | --- |
 | [n8n](https://github.com/n8n-io/n8n) 2.35.7, WooCommerce node | Get Many with Return All collected all 250 orders by following `Link` headers. Get and Update (status) worked with Basic auth and with "Include Credentials in Query". |
 | n8n 2.35.7, WooCommerce Trigger | On activation, listed and created its webhook. A dispatched `order.updated` delivery passed n8n's HMAC signature check and started a successful execution. |
+| [Airbyte `source-woocommerce`](https://github.com/airbytehq/airbyte/tree/master/airbyte-integrations/connectors/source-woocommerce) manifest 5.11.1 | The connection check passed. An incremental orders sync returned all 250 orders exactly once, using 30-day `modified_after`/`modified_before` windows with `offset` paging. A second run from the saved state returned no records. Run with `airbyte-cdk` over HTTPS. |
 | [singer-io `tap-woocommerce`](https://github.com/singer-io/tap-woocommerce) 0.1.2 | Synced 250 orders over three `wc/v2` pages and wrote its incremental bookmark. Its pinned `requests` must be upgraded to run on Python 3.13. |
 
 Hosted services have not been verified end to end:
