@@ -232,3 +232,57 @@ test('impossible calendar dates in filters are rejected instead of rolling over'
   assert.equal((await request(zoned, '/wc/v3/orders', { query: 'after=2026-02-29T00:00:00' })).status, 400)
   assert.equal((await request(zoned, '/wc/v3/orders', { query: 'after=2028-02-29T00:00:00' })).status, 200)
 })
+
+// Signs `target` (query-string OAuth, HMAC-SHA256) over `signed` and appends the oauth_* fields.
+async function signQuery(target, { nonce, timestamp, signed = [...target.searchParams] }) {
+  const { createHmac } = await import('node:crypto')
+  const enc = (v) => encodeURIComponent(v).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+  const oauth = { oauth_consumer_key: auth.consumerKey, oauth_nonce: nonce, oauth_timestamp: String(timestamp), oauth_signature_method: 'HMAC-SHA256' }
+  const pairs = [...signed, ...Object.entries(oauth)].map(([k, v]) => [enc(k), enc(v)]).sort(([ak, av], [bk, bv]) => (ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : 1))
+  const base = ['GET', enc(target.origin + target.pathname), enc(pairs.map(([k, v]) => `${k}=${v}`).join('&'))].join('&')
+  const signature = createHmac('sha256', `${auth.consumerSecret}&`).update(base).digest('base64')
+  return { ...oauth, oauth_signature: signature }
+}
+
+function oauthSetup() {
+  const nonces = new Set()
+  return setup(undefined, { oauth1: { useNonce: async (k, n) => (nonces.has(n) ? false : (nonces.add(n), true)) } })
+}
+
+test('a captured OAuth request cannot be replayed under a fresh nonce and timestamp', async () => {
+  const { emulator } = oauthSetup()
+  const target = new URL('http://store.example/wp-json/wc/v3/orders?status=processing')
+  const fields = await signQuery(target, { nonce: 'orig', timestamp: Math.floor(Date.now() / 1000) - 600 })
+  for (const [key, value] of Object.entries(fields)) target.searchParams.set(key, value)
+  assert.equal((await emulator.handleRequest(new Request(target))).status, 200)
+  assert.equal((await emulator.handleRequest(new Request(target))).status, 401, 'exact replay')
+
+  // The attacker prepends fresh protocol fields; the signature still verifies against the trailing originals.
+  const forged = new URL(target)
+  forged.search = `oauth_nonce=fresh&oauth_timestamp=${Math.floor(Date.now() / 1000)}&${target.search.slice(1)}`
+  const response = await emulator.handleRequest(new Request(forged))
+  assert.equal(response.status, 401)
+  assert.match((await response.json()).message, /Duplicate OAuth parameter/)
+})
+
+test('a different value placed in front of a signed OAuth query parameter is rejected', async () => {
+  const { emulator, calls } = oauthSetup()
+  const target = new URL('http://store.example/wp-json/wc/v3/orders?status=processing')
+  const fields = await signQuery(target, { nonce: 'inject', timestamp: Math.floor(Date.now() / 1000) })
+  const query = new URLSearchParams([['status', 'completed'], ...target.searchParams, ...Object.entries(fields)])
+  const forged = new URL(target)
+  forged.search = query.toString()
+  const response = await emulator.handleRequest(new Request(forged))
+  assert.equal(response.status, 401)
+  assert.equal(calls.length, 0, 'the handler never saw the injected value')
+})
+
+test('a parameter repeated with the same value and signed once still verifies', async () => {
+  const { emulator, calls } = oauthSetup()
+  const target = new URL('http://store.example/wp-json/wc/v3/orders?status=processing')
+  const fields = await signQuery(target, { nonce: 'twice', timestamp: Math.floor(Date.now() / 1000) })
+  const query = new URLSearchParams([...target.searchParams, ...target.searchParams, ...Object.entries(fields)])
+  target.search = query.toString()
+  assert.equal((await emulator.handleRequest(new Request(target))).status, 200)
+  assert.equal(calls.at(-1).status, 'processing')
+})

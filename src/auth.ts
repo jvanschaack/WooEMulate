@@ -266,6 +266,14 @@ async function authenticateOAuth1(request: Request, config: WooEmulateConfig): P
   for (const [key, value] of pairs) params[key] ??= value
   if (!params.oauth_consumer_key) return null
 
+  // A repeated protocol field would let the signature, timestamp and nonce checks read different
+  // occurrences, so an observer could replay a captured request under a fresh nonce.
+  const occurrences = new Map<string, number>()
+  for (const [name] of pairs) occurrences.set(name, (occurrences.get(name) ?? 0) + 1)
+  for (const [name, count] of occurrences) {
+    if (count > 1 && name.startsWith('oauth_')) return oauthError(`Duplicate OAuth parameter ${name}`)
+  }
+
   const missing = OAUTH_REQUIRED.filter((name) => !params[name])
   if (missing.length) return oauthError(`Missing OAuth parameter ${missing.join(', ')}`)
 
@@ -279,10 +287,13 @@ async function authenticateOAuth1(request: Request, config: WooEmulateConfig): P
   }
   // Two normalizations can be valid. RFC 5849 signs every pair, including repeated names.
   // WooCommerce (PHP) keeps the last value of a repeated name, and its official JavaScript
-  // client relies on that: it sends query parameters twice but signs them once.
+  // client relies on that: it sends query parameters twice but signs them once. That form is
+  // accepted only when every repeat carries the same value, so the values a handler reads are
+  // always the signed ones.
   const candidates = [pairs]
   const lastWins = new Map(pairs)
-  if (lastWins.size !== pairs.length) candidates.push([...lastWins])
+  const repeatsAgree = pairs.every(([name, value]) => lastWins.get(name) === value)
+  if (lastWins.size !== pairs.length && repeatsAgree) candidates.push([...lastWins])
   let provided = params.oauth_signature.replace(/ /g, '+')
   try {
     provided = decodeURIComponent(provided)
