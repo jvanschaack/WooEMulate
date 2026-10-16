@@ -88,7 +88,7 @@ Not implemented:
 npm install wooemulate
 ```
 
-Use documentation matching the installed version. For the changes on this branch, build from this checkout with `npm ci` and `npm run build` until a release includes them.
+Use documentation matching the installed version. This README describes `main`, which includes roadmap phases 0–4 (see the [changelog](CHANGELOG.md)). Until a release includes them, build from a checkout with `npm ci` and `npm run build`.
 
 ## Quickstart
 
@@ -251,7 +251,7 @@ Each section or hook is optional and enables only its routes. The types are in [
 | Section or hook | Enables | Notes |
 | --- | --- | --- |
 | `listOrderNotes`, `createOrderNote`, `deleteOrderNote` | Order notes | Many shipping services write tracking as notes. With `trackingFromNotes: true`, tracking found by `parseTrackingFromNote` is passed to `onShipmentTrackingCreated`. A `customerNote` would be emailed to the customer by WooCommerce; your app decides whether to send one. |
-| `listOrderRefunds`, `createOrderRefund` | Refunds | Creation validates amounts and line items first. `refundPayment` (`api_refund`) and `restockItems` (`api_restock`) tell your app whether to return money and restock. |
+| `listOrderRefunds`, `createOrderRefund` | Refunds | Creation validates amounts and line items first, including quantities already refunded by earlier refunds. `refundPayment` (`api_refund`) and `restockItems` (`api_restock`) tell your app whether to return money and restock. |
 | `products` | Products, variations, taxonomies | `listProducts` and `getProduct` are required in the section. `updateProduct` and `updateVariation` receive only stock and price changes; any other changed field is rejected. Weights are in pounds and dimensions in inches. |
 | `customers` | Customers | `listCustomers` and `getCustomer`. |
 | `coupons` | Coupons | `listCoupons` and `getCoupon`. |
@@ -299,6 +299,11 @@ Each key carries `read`, `write`, or `read_write`:
 Secrets are compared in constant time.
 
 Clients that use a plain-HTTP store URL sign requests with OAuth 1.0a, including WooCommerce's official JavaScript, PHP, and Python clients. To accept them, configure `oauth1: { useNonce }`. The hook must record each nonce and reject reuse within 15 minutes. Production stores should use HTTPS.
+
+Repeated parameters are handled strictly, so that the values your handlers read are always the signed ones:
+- A request that repeats any `oauth_*` parameter is rejected.
+- Other repeated parameters, such as `status[]=processing&status[]=completed`, verify when the client signed every occurrence.
+- WooCommerce's official JavaScript client sends each query parameter twice but signs it once. That form is accepted only when both copies carry the same value.
 
 ## One-click authorization
 
