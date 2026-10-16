@@ -1,6 +1,8 @@
 # Integration research: services that connect to WooCommerce
 
-_Researched October 2026. This is a desk survey of vendor help centers, open-source client code, and WordPress.org plugin source. None of these services has been tested end to end against WooEMulate. Treat every entry as a hypothesis to verify, not a compatibility claim._
+_Researched October 2026. This is a desk survey of vendor help centers, open-source client code, and WordPress.org plugin source. Treat every entry as a hypothesis to verify, not a compatibility claim._
+
+> **Status:** roadmap phases 0–4 are now implemented. Services labeled Now or P0–P4 below are ready for end-to-end testing; the labels record what each service needed when this survey was written. Services labeled Decision, Legacy, or Shim still depend on the [open decisions](roadmap.md#open-decisions). Clients verified so far are listed in the [README](../README.md#integration-compatibility).
 
 Pirate Ship was the first target, but many other services offer a "Connect WooCommerce" option. This survey records how about 140 of them connect, what they read and write, and which [roadmap](roadmap.md) phase would make each one testable.
 

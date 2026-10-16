@@ -2,6 +2,20 @@
 
 This roadmap turns the [integration research](integration-research.md) into phased work. Each phase lists what it adds, the services it should unlock once verified end to end, and its exit criteria.
 
+## Status
+
+Phases 0–4 are implemented on this branch; see the [changelog](../CHANGELOG.md). Open decisions 5 and 6 were resolved as recommended. Decisions 1–4 still need a maintainer's call.
+
+| Phase | Implemented | Exit criteria |
+| --- | --- | --- |
+| 0: Protocol conformance | Yes | **Met:**<ul><li>The official JavaScript client runs in CI over HTTP (OAuth 1.0a) and HTTPS (Basic and query-string credentials).</li><li>Singer `tap-woocommerce` synced 250 orders.</li><li>n8n 2.35.7 ran Get Many (Return All), Get, and Update.</li></ul>**Not run:** Airbyte. It hard-codes HTTPS and needs its Python CDK. Its offset and `modified_after` paging is covered by tests. |
+| 1: Notes and order fidelity | Yes | **Pending:** Pirate Ship and ShippingEasy/Shippo tests. They need a public HTTPS deployment. |
+| 2: Webhooks | Yes | **Met:** an n8n 2.35.7 WooCommerce Trigger created its webhook and accepted a signed `order.updated` delivery. |
+| 3: Products and stock | Yes | **Pending:** Channable import and a stock-sync round trip. They need a hosted store. |
+| 4: Customers, refunds, coupons, reports, keys | Yes | **Covered by tests:** per-key permissions, per-app one-click keys, and OAuth 1.0a against an independent signer. **Pending:** hosted-service tests. |
+
+[docs/verification.md](verification.md) describes how the manual checks were run.
+
 ## Principles
 
 - **Match WooCommerce's behavior, not only its JSON shapes.** Clients depend on headers, defaults, date formats, and error codes as much as on fields.
@@ -181,10 +195,10 @@ This phase adds no new resources. It fixes behavior that breaks real clients tod
 4. **Plugin-namespace shims** such as `wc-shipstation/v1`, `klaviyo/v1`, `wc-zapier/v1`, `wc/v2/printful`, and `omnisend-api/v1`.
    - **Against:** these are vendor-internal contracts that can change without notice, and onboarding for these services usually starts in the WordPress admin.
    - **Recommendation:** keep them out of core. For ShipStation, separately investigate its non-WooCommerce integration options, such as its custom-store integration; this research did not verify them.
-5. **Empty collections for health checks.**
+5. **Empty collections for health checks.** *Resolved: implemented as the opt-in `emptyCollections` option.*
    - **The problem:** n8n's credential test calls `/products/categories`, which fails until Phase 3.
    - **Recommendation:** allow an explicit, opt-in list of read-only collection routes that return an empty list. This lets stores without that resource pass connection checks, and it stays off by default.
-6. **Breaking defaults in Phase 0.**
+6. **Breaking defaults in Phase 0.** *Resolved: accepted and recorded in the changelog.*
    - **What changes:** the `per_page` default, out-of-range rejection, and the date format.
    - **Recommendation:** accept these changes in 0.x and record them in the changelog.
 
