@@ -9,11 +9,22 @@ import { handleDiscovery, handleNamespaceIndex } from './handlers/discovery.js'
 import { handleOAuthAuthorize } from './handlers/oauth.js'
 import { CORS_HEADERS, createInputReader, jsonResponse, type ApiVersion, type HttpMethod, type RouteContext } from './http.js'
 import { ALL_NAMESPACES, WC_NAMESPACES, compileRoutes, type CompiledRoute, type RouteAction } from './routes.js'
-import type { WooEmulateConfig, WooEmulateRequestContext } from './types.js'
+import type { WooEmulateConfig, WooEmulateRequestContext, WooEmulateWebhookDelivery } from './types.js'
+import { dispatchWebhooks } from './webhooks.js'
 
 export interface WooEmulateInstance {
   handleRequest(request: Request, context?: WooEmulateRequestContext): Promise<Response>
   config: WooEmulateConfig
+  webhooks: {
+    /**
+     * Delivers a topic to every active webhook subscribed to it and resolves with each attempt.
+     * Pass the current resource object for resource topics (for `*.deleted`, the object or its
+     * numeric API ID) and the hook argument for `action.*` topics. Resolves with [] when
+     * webhooks are not configured. Hosts on serverless runtimes can pass the promise to
+     * `waitUntil`.
+     */
+    dispatch(topic: string, resource: unknown): Promise<WooEmulateWebhookDelivery[]>
+  }
 }
 
 const DENIED: Record<RouteAction, [string, string]> = {
@@ -156,6 +167,9 @@ export function createWooEmulate(config: WooEmulateConfig): WooEmulateInstance {
 
   return {
     config,
+    webhooks: {
+      dispatch: (topic, resource) => dispatchWebhooks(config, topic, resource),
+    },
     async handleRequest(request: Request, context: WooEmulateRequestContext = {}): Promise<Response> {
       const started = Date.now()
 

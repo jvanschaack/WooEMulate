@@ -323,3 +323,72 @@ export function paginateInMemory<T>(
 export function errorMessage(err: unknown, fallback: string): string {
   return err instanceof Error && err.message ? err.message : fallback
 }
+
+type BatchHandler = (ctx: RouteContext) => Promise<Response>
+
+/**
+ * Implements WooCommerce's `/batch` contract by replaying each item through the single-item
+ * handlers. Failed items are reported inline as `{ id, error }`, as WooCommerce does.
+ */
+export async function handleBatch(
+  ctx: RouteContext,
+  handlers: { create?: BatchHandler; update?: BatchHandler; delete?: BatchHandler }
+): Promise<Response> {
+  const body = await ctx.input()
+  const create = Array.isArray(body.create) ? body.create : []
+  const update = Array.isArray(body.update) ? body.update : []
+  const remove = Array.isArray(body.delete) ? body.delete : []
+  if (create.length + update.length + remove.length > 100) {
+    return jsonResponse(
+      {
+        code: 'woocommerce_rest_request_entity_too_large',
+        message: 'Unable to accept more than 100 items for this request.',
+        data: { status: 413 },
+      },
+      413
+    )
+  }
+
+  const unsupported = (id: unknown) => ({
+    id,
+    error: { code: 'rest_no_route', message: 'This batch operation is not supported.', data: { status: 404 } },
+  })
+  const run = async (handler: BatchHandler, method: HttpMethod, id: unknown, input: Record<string, any>) => {
+    const itemCtx: RouteContext = {
+      ...ctx,
+      method,
+      params: { ...ctx.params, ...(id === undefined ? {} : { id: String(id) }) },
+      input: async () => input,
+    }
+    const response = await handler(itemCtx)
+    const data = await response.json().catch(() => ({}))
+    if (response.status >= 400) return { id: id ?? 0, error: data }
+    return data
+  }
+
+  const result: Record<string, unknown[]> = {}
+  if (create.length) {
+    result.create = []
+    for (const item of create) {
+      result.create.push(handlers.create ? await run(handlers.create, 'POST', undefined, item ?? {}) : unsupported(0))
+    }
+  }
+  if (update.length) {
+    result.update = []
+    for (const item of update) {
+      const id = item?.id
+      if (!handlers.update) result.update.push(unsupported(id ?? 0))
+      else if (id === undefined || id === null || !/^\d+$/.test(String(id))) {
+        result.update.push({ id: id ?? 0, error: { code: 'woocommerce_rest_invalid_id', message: 'Invalid ID.', data: { status: 400 } } })
+      } else result.update.push(await run(handlers.update, 'PUT', id, item))
+    }
+  }
+  if (remove.length) {
+    result.delete = []
+    for (const entry of remove) {
+      const id = entry && typeof entry === 'object' ? entry.id : entry
+      result.delete.push(handlers.delete ? await run(handlers.delete, 'DELETE', id, { force: true }) : unsupported(id ?? 0))
+    }
+  }
+  return jsonResponse(result)
+}

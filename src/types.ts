@@ -329,6 +329,70 @@ export interface WooEmulateOAuthConfig {
   authorize(request: Request, connection: WooEmulateOAuthAuthorizedPayload): Promise<boolean>
 }
 
+export type WooEmulateWebhookStatus = 'active' | 'paused' | 'disabled'
+export type WooEmulateWebhookApiVersion = 'wp_api_v1' | 'wp_api_v2' | 'wp_api_v3'
+
+export interface WooEmulateWebhook {
+  /** Numeric webhook ID assigned by the store. */
+  id: number
+  name: string
+  status: WooEmulateWebhookStatus
+  /** For example `order.updated` or `action.woocommerce_order_status_processing`. */
+  topic: string
+  deliveryUrl: string
+  /** HMAC-SHA256 signing secret. Never returned by the API. */
+  secret: string
+  /** Payload schema, taken from the namespace the webhook was created through. */
+  apiVersion: WooEmulateWebhookApiVersion
+  /** Consecutive failed deliveries. */
+  failureCount: number
+  createdAt: string | Date
+  updatedAt?: string | Date
+}
+
+export type WooEmulateWebhookInput = Omit<WooEmulateWebhook, 'id' | 'createdAt' | 'updatedAt'>
+
+/** Persistent webhook storage. Serverless hosts cannot keep webhooks in memory. */
+export interface WooEmulateWebhookStore {
+  listWebhooks(): Promise<WooEmulateWebhook[]>
+  getWebhook(id: number): Promise<WooEmulateWebhook | null>
+  createWebhook(input: WooEmulateWebhookInput): Promise<WooEmulateWebhook>
+  updateWebhook(id: number, changes: Partial<WooEmulateWebhookInput>): Promise<WooEmulateWebhook>
+  deleteWebhook(id: number): Promise<void>
+}
+
+export interface WooEmulateWebhookDelivery {
+  webhookId: number
+  deliveryId: string
+  topic: string
+  /** HTTP status from the delivery URL, or null when the request failed or was blocked. */
+  status: number | null
+  success: boolean
+  error?: string
+  durationMs: number
+}
+
+export interface WooEmulateWebhooksConfig {
+  store: WooEmulateWebhookStore
+  /**
+   * Decides whether a delivery URL may receive webhooks. Replaces the default policy, which
+   * requires HTTPS and rejects localhost, private, link-local, and other internal addresses.
+   * The default cannot detect public hostnames that resolve to private addresses.
+   */
+  validateDeliveryUrl?(url: URL): boolean | Promise<boolean>
+  /** Delivery timeout in milliseconds. Defaults to 30000. */
+  timeoutMs?: number
+  /**
+   * A webhook is disabled when a delivery fails after this many recorded consecutive failures.
+   * Defaults to 5, as in WooCommerce.
+   */
+  maxDeliveryFailures?: number
+  /** Fetch implementation used for deliveries and pings. Defaults to the global fetch. */
+  fetch?: typeof fetch
+  /** Observes each delivery attempt. Errors thrown here are ignored. */
+  onDelivery?(delivery: WooEmulateWebhookDelivery): void | Promise<void>
+}
+
 export interface WooEmulateRequestEvent {
   method: string
   path: string
@@ -353,6 +417,8 @@ export interface WooEmulateConfig {
   adapter: WooEmulateAdapter
   /** One-click authorization is disabled unless explicitly configured. */
   oauth?: WooEmulateOAuthConfig
+  /** Enables the `/webhooks` API and `emulator.webhooks.dispatch`. */
+  webhooks?: WooEmulateWebhooksConfig
   basePath?: string
   cors?: boolean | { origins?: string[]; allowHeaders?: string[] }
   /**

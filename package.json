@@ -21,7 +21,7 @@
   "scripts": {
     "build": "tsup src/index.ts --format cjs,esm --dts",
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
-    "test": "node --test tests/test.mjs tests/regressions.mjs tests/conformance.mjs tests/notes-fidelity.mjs",
+    "test": "node --test tests/test.mjs tests/regressions.mjs tests/conformance.mjs tests/notes-fidelity.mjs tests/webhooks.mjs",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

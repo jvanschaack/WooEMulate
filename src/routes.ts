@@ -14,6 +14,7 @@ import {
   listShipmentTrackings,
 } from './handlers/shipment-tracking.js'
 import { handleSystemStatus, handleSystemStatusTools } from './handlers/system-status.js'
+import { batchWebhooks, createWebhook, deleteWebhook, getWebhook, listWebhooks, updateWebhook } from './handlers/webhooks.js'
 import type { HttpMethod, RouteContext } from './http.js'
 import type { WooEmulateConfig } from './types.js'
 
@@ -50,6 +51,8 @@ const ORDER = '/orders/(?P<order_id>[\\d]+)'
 export function editable(spec: MethodSpec): Partial<Record<HttpMethod, MethodSpec>> {
   return { POST: spec, PUT: spec, PATCH: spec }
 }
+
+const hasWebhooks = (config: WooEmulateConfig) => Boolean(config.webhooks?.store)
 
 const ROUTES: RouteSpec[] = [
   { path: '/system_status', methods: { GET: { handler: handleSystemStatus, action: 'view' } } },
@@ -96,6 +99,23 @@ const ROUTES: RouteSpec[] = [
   },
 
   { path: '/reports/orders/totals', methods: { GET: { handler: ordersTotalsReport, action: 'list' } } },
+
+  {
+    path: '/webhooks',
+    methods: {
+      GET: { handler: listWebhooks, action: 'list', enabled: hasWebhooks },
+      POST: { handler: createWebhook, action: 'create', enabled: hasWebhooks },
+    },
+  },
+  { path: '/webhooks/batch', methods: editable({ handler: batchWebhooks, action: 'batch', enabled: hasWebhooks }) },
+  {
+    path: `/webhooks/${ID}`,
+    methods: {
+      GET: { handler: getWebhook, action: 'view', enabled: hasWebhooks },
+      ...editable({ handler: updateWebhook, action: 'edit', enabled: hasWebhooks }),
+      DELETE: { handler: deleteWebhook, action: 'delete', enabled: hasWebhooks },
+    },
+  },
 ]
 
 export function compileRoutes(routes: RouteSpec[] = ROUTES): CompiledRoute[] {

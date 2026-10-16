@@ -73,3 +73,35 @@ export function request(emulator, path, { method = 'GET', body, headers = {}, qu
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   }))
 }
+
+/** In-memory webhook store for tests. Real deployments need persistent storage. */
+export function memoryWebhookStore() {
+  const rows = new Map()
+  let nextId = 1
+  return {
+    rows,
+    async listWebhooks() { return [...rows.values()].map((row) => ({ ...row })) },
+    async getWebhook(id) { return rows.has(id) ? { ...rows.get(id) } : null },
+    async createWebhook(input) {
+      const row = { ...input, id: nextId++, createdAt: new Date().toISOString() }
+      rows.set(row.id, row)
+      return { ...row }
+    },
+    async updateWebhook(id, changes) {
+      const row = { ...rows.get(id), ...changes, updatedAt: new Date().toISOString() }
+      rows.set(id, row)
+      return { ...row }
+    },
+    async deleteWebhook(id) { rows.delete(id) },
+  }
+}
+
+/** Records outgoing requests and answers each with the configured status. */
+export function recordingFetch(status = 200) {
+  const calls = []
+  const fetch = async (url, init) => {
+    calls.push({ url: String(url), init, headers: new Headers(init.headers), body: init.body })
+    return new Response('ok', { status: typeof status === 'function' ? status(url, init) : status })
+  }
+  return { calls, fetch }
+}
