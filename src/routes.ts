@@ -4,6 +4,7 @@
  * advertises routes and methods that are actually enabled for the configured adapter.
  */
 
+import { createOrderNote, deleteOrderNote, getOrderNote, listOrderNotes } from './handlers/notes.js'
 import { getOrder, listOrders, updateOrder } from './handlers/orders.js'
 import { ordersTotalsReport } from './handlers/reports.js'
 import {
@@ -58,6 +59,21 @@ const ROUTES: RouteSpec[] = [
   {
     path: `/orders/${ID}`,
     methods: { GET: { handler: getOrder, action: 'view' }, ...editable({ handler: updateOrder, action: 'edit' }) },
+  },
+
+  {
+    path: `${ORDER}/notes`,
+    methods: {
+      GET: { handler: listOrderNotes, action: 'list', enabled: (c) => !!c.adapter.listOrderNotes },
+      POST: { handler: createOrderNote, action: 'create', enabled: (c) => !!c.adapter.createOrderNote },
+    },
+  },
+  {
+    path: `${ORDER}/notes/${ID}`,
+    methods: {
+      GET: { handler: getOrderNote, action: 'view', enabled: (c) => !!c.adapter.listOrderNotes },
+      DELETE: { handler: deleteOrderNote, action: 'delete', enabled: (c) => !!c.adapter.deleteOrderNote },
+    },
   },
 
   {

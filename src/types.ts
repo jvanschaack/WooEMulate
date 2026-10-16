@@ -32,13 +32,81 @@ export interface WooEmulateOrderItem {
   sku?: string
   quantity: number
   unitPriceCents: number
+  /** Line total after discounts. Defaults to unit price times quantity. */
   totalPriceCents?: number
+  /** Line subtotal before discounts. Defaults to the line total. */
+  subtotalCents?: number
+  /** Tax on the line total. */
+  taxCents?: number
+  /** Tax on the line subtotal. Defaults to `taxCents`. */
+  subtotalTaxCents?: number
+  /** Per-rate taxes; `rateId` matches an entry in the order's `taxLines`. */
+  taxes?: Array<{ rateId: number; totalCents: number; subtotalCents?: number }>
+  /** Numeric API ID of the product. Serialized as 0 (as WooCommerce does for missing products) when omitted. */
+  productId?: number
+  /** Numeric API ID of the variation, or 0/omitted for simple products. */
+  variationId?: number
+  /** Parent product name, for variations. */
+  parentName?: string
+  imageUrl?: string
+  taxClass?: string
+  metadata?: Record<string, unknown>
   weightLb?: number
   dimensionsIn?: {
     length?: number
     width?: number
     height?: number
   }
+}
+
+export interface WooEmulateTaxLine {
+  id?: number
+  /** Tax rate ID, referenced by item and shipping `taxes`. */
+  rateId: number
+  /** WooCommerce rate code, for example `US-TX-STATE TAX-1`. */
+  rateCode: string
+  label: string
+  compound?: boolean
+  /** Tax on items and fees for this rate. */
+  taxCents: number
+  /** Tax on shipping for this rate. */
+  shippingTaxCents?: number
+  ratePercent?: number
+}
+
+export interface WooEmulateShippingLine {
+  id?: number
+  methodTitle: string
+  methodId: string
+  instanceId?: string
+  totalCents: number
+  taxCents?: number
+  taxes?: Array<{ rateId: number; totalCents: number }>
+  metadata?: Record<string, unknown>
+}
+
+export interface WooEmulateFeeLine {
+  id?: number
+  name: string
+  totalCents: number
+  taxCents?: number
+  taxClass?: string
+  taxStatus?: 'taxable' | 'none'
+}
+
+export interface WooEmulateCouponLine {
+  id?: number
+  code: string
+  discountCents: number
+  discountTaxCents?: number
+}
+
+/** Refund summary embedded in an order (`refunds` in the order response). */
+export interface WooEmulateRefundSummary {
+  id: number
+  reason?: string
+  /** Positive refunded amount; serialized as a negative total, as WooCommerce does. */
+  totalCents: number
 }
 
 export interface WooEmulateTracking {
@@ -53,16 +121,31 @@ export interface WooEmulateOrder {
   id: string | number
   /** Stable, unique, persisted API ID. Required when id is not a positive numeric ID. */
   wooCommerceId?: number
+  /** Numeric API ID of the parent order, if any. */
+  parentId?: number
   orderNumber: string
+  orderKey?: string
+  createdVia?: string
   status: WooEmulateOrderStatus | string
   createdAt: string | Date
   updatedAt?: string | Date
   totalCents: number
   subtotalCents?: number
   shippingCents?: number
+  /** Total tax (cart plus shipping). */
   taxCents?: number
+  /** Tax on shipping. Defaults to the sum of `shippingLines[].taxCents`, else 0. */
+  shippingTaxCents?: number
+  /** Tax on items and fees. Defaults to `taxCents` minus shipping tax. */
+  cartTaxCents?: number
   discountCents?: number
+  discountTaxCents?: number
+  pricesIncludeTax?: boolean
   currency?: string
+  /** Numeric API ID of the customer; 0 or omitted for guest orders. */
+  customerId?: number
+  customerIpAddress?: string
+  customerUserAgent?: string
   customer?: {
     name?: string
     email?: string
@@ -76,7 +159,41 @@ export interface WooEmulateOrder {
   paymentMethod?: string
   paymentMethodTitle?: string
   transactionId?: string
+  paymentUrl?: string
+  /**
+   * When the order was paid. `null` means unpaid. When omitted, processing and completed orders
+   * are treated as paid at creation and other statuses as unpaid.
+   */
+  paidAt?: string | Date | null
+  /** When the order was completed. Defaults to the shipment date for completed orders. */
+  completedAt?: string | Date | null
+  /** Tax totals per rate. */
+  taxLines?: WooEmulateTaxLine[]
+  /** Shipping lines. When omitted, one line is synthesized from `shippingCents`. */
+  shippingLines?: WooEmulateShippingLine[]
+  feeLines?: WooEmulateFeeLine[]
+  couponLines?: WooEmulateCouponLine[]
+  refunds?: WooEmulateRefundSummary[]
   metadata?: Record<string, any>
+}
+
+export interface WooEmulateOrderNote {
+  /** Numeric note ID, unique within the store. */
+  id: number
+  note: string
+  /** True for notes visible to (and emailed to) the customer. */
+  customerNote: boolean
+  /** `system` for automated notes, otherwise the author's display name. Defaults to `system`. */
+  author?: string
+  createdAt: string | Date
+}
+
+export interface WooEmulateOrderNoteInput {
+  note: string
+  /** WooCommerce emails customer notes to the customer; the host decides whether to send one. */
+  customerNote: boolean
+  /** True when the note is attributed to the API user rather than the system. */
+  addedByUser: boolean
 }
 
 export interface WooEmulateListOrdersParams {
@@ -157,6 +274,18 @@ export interface WooEmulateAdapter {
    * Optional hook called after successful 1-click OAuth connection.
    */
   onOAuthAuthorized?(payload: WooEmulateOAuthAuthorizedPayload): Promise<void>
+
+  /** Lists an order's notes. Enables `GET /orders/:id/notes`. Receives the original order ID. */
+  listOrderNotes?(
+    orderId: string | number,
+    filter: { type: 'any' | 'customer' | 'internal' }
+  ): Promise<WooEmulateOrderNote[]>
+
+  /** Persists a note. Enables `POST /orders/:id/notes`. Receives the original order ID. */
+  createOrderNote?(orderId: string | number, note: WooEmulateOrderNoteInput): Promise<WooEmulateOrderNote>
+
+  /** Deletes a note. Enables `DELETE /orders/:id/notes/:note_id`. */
+  deleteOrderNote?(orderId: string | number, noteId: number): Promise<void>
 }
 
 export interface WooEmulateStoreConfig {
@@ -231,6 +360,12 @@ export interface WooEmulateConfig {
    * when the adapter does not implement them. Some services call these as connection checks.
    */
   emptyCollections?: string[]
+  /**
+   * When true, notes created through the API are scanned with `parseTrackingFromNote` and any
+   * tracking found is passed to `onShipmentTrackingCreated`. Services such as Pirate Ship and
+   * ShippingEasy write tracking only as order notes. Defaults to false.
+   */
+  trackingFromNotes?: boolean
   /** Observes each API request after it is handled. Errors thrown here are ignored. */
   onRequest?(event: WooEmulateRequestEvent): void | Promise<void>
 }

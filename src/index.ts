@@ -6,7 +6,8 @@
  */
 
 export { createWooEmulate, type WooEmulateInstance } from './router.js'
-export { serializeWcOrder, type WcSerializeOptions } from './serializer.js'
+export { serializeWcOrder, serializeWcOrderNote, type WcSerializeOptions } from './serializer.js'
+export { parseTrackingFromNote } from './tracking-notes.js'
 export { authenticateRequest, wcErrorResponse } from './auth.js'
 export {
   getWcNumericId,
@@ -36,5 +37,12 @@ export type {
   WooEmulateOrderStatus,
   WooEmulateOAuthAuthorizedPayload,
   WooEmulateRequestEvent,
+  WooEmulateOrderNote,
+  WooEmulateOrderNoteInput,
+  WooEmulateTaxLine,
+  WooEmulateShippingLine,
+  WooEmulateFeeLine,
+  WooEmulateCouponLine,
+  WooEmulateRefundSummary,
   WooEmulateRequestContext,
 } from './types.js'
