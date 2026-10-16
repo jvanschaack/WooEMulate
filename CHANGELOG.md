@@ -32,7 +32,7 @@ This release implements phases 0–4 of the [roadmap](docs/roadmap.md). Several 
   - Products, variations, categories, tags, attributes, and terms through `adapter.products`.
   - Stock and price updates (`updateProduct` and `updateVariation`) with batch support.
 - **Customers and coupons:** customers (`adapter.customers`) and coupons (`adapter.coupons`), read-only.
-- **Refunds:** `listOrderRefunds`, plus opt-in `createOrderRefund` with amount and line-item validation.
+- **Refunds:** `listOrderRefunds`, plus opt-in `createOrderRefund` with amount and line-item validation, including quantities already refunded.
 - **Reports:**
   - `/reports`, `/reports/sales`, and `/reports/top_sellers`, computed from orders.
   - `/reports/products/totals`, and `/reports/customers/totals` through `reports.customersTotals`.
@@ -89,12 +89,18 @@ This release implements phases 0–4 of the [roadmap](docs/roadmap.md). Several 
   - An empty list is ignored instead of matching nothing.
 - **Offset paging.** Responses link to the next `offset`; following `rel="next"` previously repeated the same rows.
 - **Refund line items:**
+  - A line's quantity is checked against what remains after earlier refunds (`refundedItemId`), so the same units cannot be refunded, or restocked, twice.
   - Repeated entries are merged before the quantity check.
   - Shipping and fee line IDs are accepted.
   - Requests are refused when the order total is unknown.
 - **Report ranges.** Impossible dates, years outside 1970–9998, and spans over 3660 days return 400; previously they could crash or consume large amounts of memory.
 - **Sales report.** `total_tax` includes shipping tax, as WooCommerce reports.
-- **OAuth 1.0a.** The `realm` header parameter is ignored when verifying signatures.
+- **OAuth 1.0a:**
+  - The `realm` header parameter is ignored when verifying signatures.
+  - Signatures cover every occurrence of a repeated parameter (RFC 5849), sorted by encoded name and value, so `status[]=processing&status[]=completed` verifies.
+  - WooCommerce's last-value-wins form, which its official JavaScript client relies on by sending each query parameter twice but signing it once, is accepted only when every repeat carries the same value.
+  - A request that repeats any `oauth_*` parameter is rejected. Previously a captured query-string request could be replayed by prepending a fresh `oauth_nonce` and `oauth_timestamp`, because the signature check and the nonce and timestamp checks read different occurrences.
+- **Date filters.** Impossible calendar values in `after`, `before`, `modified_after`, and `modified_before` (such as `2026-02-31`, `24:00`, or month 13) return 400 `rest_invalid_param`. They previously rolled over to another date.
 - **Error handling:**
   - Errors thrown by key stores, auth resolvers, or nonce stores now produce JSON errors.
   - Orders without a valid API ID return 404 instead of 500.

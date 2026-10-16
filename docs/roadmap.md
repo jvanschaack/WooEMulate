@@ -4,11 +4,11 @@ This roadmap turns the [integration research](integration-research.md) into phas
 
 ## Status
 
-Phases 0–4 are implemented on this branch; see the [changelog](../CHANGELOG.md). Open decisions 5 and 6 were resolved as recommended. Decisions 1–4 still need a maintainer's call.
+Phases 0–4 are implemented and merged to `main` (PR #2); see the [changelog](../CHANGELOG.md). Open decisions 5 and 6 were resolved as recommended. Decisions 1–4 still need a maintainer's call.
 
 | Phase | Implemented | Exit criteria |
 | --- | --- | --- |
-| 0: Protocol conformance | Yes | **Met:**<ul><li>The official JavaScript client runs in CI over HTTP (OAuth 1.0a) and HTTPS (Basic and query-string credentials).</li><li>Singer `tap-woocommerce` synced 250 orders.</li><li>n8n 2.35.7 ran Get Many (Return All), Get, and Update.</li><li>Airbyte's WooCommerce connector passed its connection check, and an incremental orders sync returned each order once.</li></ul> |
+| 0: Protocol conformance | Yes | **Met:**<ul><li>The official JavaScript client runs in the test suite (`npm test`; the repository has no CI workflow yet) over HTTP (OAuth 1.0a) and HTTPS (Basic and query-string credentials).</li><li>Singer `tap-woocommerce` synced 250 orders.</li><li>n8n 2.35.7 ran Get Many (Return All), Get, and Update.</li><li>Airbyte's WooCommerce connector passed its connection check, and an incremental orders sync returned each order once.</li></ul> |
 | 1: Notes and order fidelity | Yes | **Pending:** Pirate Ship and ShippingEasy/Shippo tests. They need a public HTTPS deployment. |
 | 2: Webhooks | Yes | **Met:** an n8n 2.35.7 WooCommerce Trigger created its webhook and accepted a signed `order.updated` delivery. |
 | 3: Products and stock | Yes | **Pending:** Channable import and a stock-sync round trip. They need a hosted store. |
