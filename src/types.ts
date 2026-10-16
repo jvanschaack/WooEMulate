@@ -243,6 +243,233 @@ export interface WooEmulateOAuthAuthorizedPayload {
   callbackUrl?: string
 }
 
+export type WooEmulateStockStatus = 'instock' | 'outofstock' | 'onbackorder'
+
+export interface WooEmulateImage {
+  id?: number
+  src: string
+  name?: string
+  alt?: string
+}
+
+export interface WooEmulateTermRef {
+  id: number
+  name: string
+  slug: string
+}
+
+export interface WooEmulateProductAttribute {
+  /** Global attribute ID; 0 or omitted for product-level (custom) attributes. */
+  id?: number
+  name: string
+  options: string[]
+  position?: number
+  visible?: boolean
+  /** True when the attribute defines variations. */
+  variation?: boolean
+}
+
+export interface WooEmulateProduct {
+  id: string | number
+  /** Stable, unique, persisted API ID. Required when id is not a positive numeric ID. */
+  wooCommerceId?: number
+  name: string
+  slug?: string
+  permalink?: string
+  /** Defaults to `variable` when `variationIds` is non-empty, otherwise `simple`. */
+  type?: 'simple' | 'variable' | 'grouped' | 'external'
+  status?: 'publish' | 'draft' | 'pending' | 'private'
+  featured?: boolean
+  description?: string
+  shortDescription?: string
+  sku?: string
+  /** Current price. Defaults to the sale price when on sale, otherwise the regular price. */
+  priceCents?: number | null
+  regularPriceCents?: number | null
+  salePriceCents?: number | null
+  virtual?: boolean
+  downloadable?: boolean
+  taxStatus?: 'taxable' | 'shipping' | 'none'
+  taxClass?: string
+  /** Defaults to true when `stockQuantity` is a number. */
+  manageStock?: boolean
+  stockQuantity?: number | null
+  stockStatus?: WooEmulateStockStatus
+  backorders?: 'no' | 'notify' | 'yes'
+  weightLb?: number
+  dimensionsIn?: { length?: number; width?: number; height?: number }
+  shippingClass?: string
+  categories?: WooEmulateTermRef[]
+  tags?: WooEmulateTermRef[]
+  images?: WooEmulateImage[]
+  attributes?: WooEmulateProductAttribute[]
+  /** Numeric API IDs of the product's variations. */
+  variationIds?: number[]
+  /** Numeric API ID of the parent (grouped) product. */
+  parentId?: number
+  totalSales?: number
+  menuOrder?: number
+  createdAt?: string | Date
+  updatedAt?: string | Date
+  metadata?: Record<string, unknown>
+}
+
+export interface WooEmulateProductVariation {
+  id: string | number
+  /** Stable, unique, persisted API ID. Required when id is not a positive numeric ID. */
+  wooCommerceId?: number
+  sku?: string
+  description?: string
+  permalink?: string
+  status?: 'publish' | 'private' | 'draft' | 'pending'
+  priceCents?: number | null
+  regularPriceCents?: number | null
+  salePriceCents?: number | null
+  virtual?: boolean
+  downloadable?: boolean
+  taxStatus?: 'taxable' | 'shipping' | 'none'
+  taxClass?: string
+  /** `parent` means the parent product manages stock. */
+  manageStock?: boolean | 'parent'
+  stockQuantity?: number | null
+  stockStatus?: WooEmulateStockStatus
+  backorders?: 'no' | 'notify' | 'yes'
+  weightLb?: number
+  dimensionsIn?: { length?: number; width?: number; height?: number }
+  shippingClass?: string
+  image?: WooEmulateImage | null
+  /** Attribute values that define this variation. */
+  attributes: Array<{ id?: number; name: string; option: string }>
+  menuOrder?: number
+  createdAt?: string | Date
+  updatedAt?: string | Date
+  metadata?: Record<string, unknown>
+}
+
+export interface WooEmulateCatalogListParams {
+  page: number
+  perPage: number
+  /** Number of matching items to skip. Authoritative over `page`. */
+  offset: number
+  order: 'asc' | 'desc'
+  orderby: string
+  search?: string
+  include?: number[]
+  exclude?: number[]
+  after?: string
+  before?: string
+  modifiedAfter?: string
+  modifiedBefore?: string
+  sku?: string[]
+  status?: string
+  stockStatus?: WooEmulateStockStatus
+}
+
+export interface WooEmulateListProductsParams extends WooEmulateCatalogListParams {
+  orderby: 'date' | 'id' | 'include' | 'title' | 'slug' | 'price' | 'popularity' | 'rating' | 'modified' | 'menu_order'
+  type?: 'simple' | 'variable' | 'grouped' | 'external'
+  /** Category API ID. */
+  category?: number
+  /** Tag API ID. */
+  tag?: number
+  parent?: number[]
+  featured?: boolean
+  onSale?: boolean
+  minPriceCents?: number
+  maxPriceCents?: number
+}
+
+export interface WooEmulateListVariationsParams extends WooEmulateCatalogListParams {
+  orderby: 'date' | 'id' | 'include' | 'title' | 'slug' | 'modified' | 'menu_order'
+}
+
+/** The only product fields the API writes: stock and prices. */
+export interface WooEmulateStockPriceChanges {
+  manageStock?: boolean
+  stockQuantity?: number | null
+  stockStatus?: WooEmulateStockStatus
+  /** `null` clears the price. */
+  regularPriceCents?: number | null
+  salePriceCents?: number | null
+}
+
+export interface WooEmulateCategory {
+  id: number
+  name: string
+  slug: string
+  /** Parent category ID; 0 for top level. */
+  parent?: number
+  description?: string
+  image?: WooEmulateImage | null
+  menuOrder?: number
+  count?: number
+}
+
+export interface WooEmulateTag {
+  id: number
+  name: string
+  slug: string
+  description?: string
+  count?: number
+}
+
+export interface WooEmulateGlobalAttribute {
+  id: number
+  name: string
+  /** Defaults to `pa_` plus a slug of the name. */
+  slug?: string
+  type?: string
+  orderBy?: 'menu_order' | 'name' | 'name_num' | 'id'
+  hasArchives?: boolean
+}
+
+export interface WooEmulateAttributeTerm {
+  id: number
+  name: string
+  slug: string
+  description?: string
+  menuOrder?: number
+  count?: number
+}
+
+/** Optional catalog section. Each hook enables the routes that need it. */
+export interface WooEmulateProductAdapter {
+  /** Return one page of matching products and the total count. Enables `GET /products`. */
+  listProducts(params: WooEmulateListProductsParams): Promise<{
+    products: WooEmulateProduct[]
+    totalCount: number
+    totalPages?: number
+  }>
+  /** Look up a product by numeric API ID. Enables `GET /products/:id`. */
+  getProduct(id: number): Promise<WooEmulateProduct | null>
+  /** Enables `GET /products/:id/variations`. */
+  listVariations?(
+    product: WooEmulateProduct,
+    params: WooEmulateListVariationsParams
+  ): Promise<{ variations: WooEmulateProductVariation[]; totalCount: number; totalPages?: number }>
+  /** Look up a variation by numeric API ID. Enables `GET /products/:id/variations/:variation_id`. */
+  getVariation?(product: WooEmulateProduct, variationId: number): Promise<WooEmulateProductVariation | null>
+  /**
+   * Persist stock and price changes. Enables `PUT/PATCH /products/:id` and `/products/batch`
+   * updates. Return the updated product, or nothing to have it re-read.
+   */
+  updateProduct?(product: WooEmulateProduct, changes: WooEmulateStockPriceChanges): Promise<WooEmulateProduct | void>
+  /** Same as `updateProduct`, for variations. */
+  updateVariation?(
+    product: WooEmulateProduct,
+    variation: WooEmulateProductVariation,
+    changes: WooEmulateStockPriceChanges
+  ): Promise<WooEmulateProductVariation | void>
+  /** All categories; the library filters and paginates. Enables `/products/categories`. */
+  listCategories?(): Promise<WooEmulateCategory[]>
+  /** All tags. Enables `/products/tags`. */
+  listTags?(): Promise<WooEmulateTag[]>
+  /** All global attributes. Enables `/products/attributes`. */
+  listAttributes?(): Promise<WooEmulateGlobalAttribute[]>
+  /** All terms of a global attribute. Enables `/products/attributes/:id/terms`. */
+  listAttributeTerms?(attributeId: number): Promise<WooEmulateAttributeTerm[]>
+}
+
 export interface WooEmulateAdapter {
   /**
    * Return a paginated list of orders matching query filters.
@@ -286,6 +513,9 @@ export interface WooEmulateAdapter {
 
   /** Deletes a note. Enables `DELETE /orders/:id/notes/:note_id`. */
   deleteOrderNote?(orderId: string | number, noteId: number): Promise<void>
+
+  /** Optional product catalog. Enables `/products` and related routes. */
+  products?: WooEmulateProductAdapter
 }
 
 export interface WooEmulateStoreConfig {

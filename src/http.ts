@@ -392,3 +392,15 @@ export async function handleBatch(
   }
   return jsonResponse(result)
 }
+
+/** Parses a WooCommerce decimal string ("21.99") into cents. Empty values clear the price (null). */
+export function parseMoney(errors: ParamErrors, name: string, raw: unknown): number | null | undefined {
+  if (raw === undefined) return undefined
+  if (raw === null || raw === '') return null
+  const text = String(raw).trim()
+  if (!/^\d+(\.\d+)?$/.test(text)) {
+    errors.add(name, `${name} is not a valid price.`)
+    return undefined
+  }
+  return Math.round(Number(text) * 100)
+}

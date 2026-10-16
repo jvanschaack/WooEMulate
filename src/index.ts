@@ -8,6 +8,14 @@
 export { createWooEmulate, type WooEmulateInstance } from './router.js'
 export { serializeWcOrder, serializeWcOrderNote, type WcSerializeOptions } from './serializer.js'
 export { parseTrackingFromNote } from './tracking-notes.js'
+export {
+  serializeWcProduct,
+  serializeWcVariation,
+  serializeWcCategory,
+  serializeWcTag,
+  serializeWcAttribute,
+  serializeWcAttributeTerm,
+} from './serializers/products.js'
 export { isSafeDeliveryUrl, isValidWebhookTopic, signWebhookPayload } from './webhooks.js'
 export { authenticateRequest, wcErrorResponse } from './auth.js'
 export {
@@ -45,6 +53,21 @@ export type {
   WooEmulateFeeLine,
   WooEmulateCouponLine,
   WooEmulateRefundSummary,
+  WooEmulateProduct,
+  WooEmulateProductVariation,
+  WooEmulateProductAdapter,
+  WooEmulateProductAttribute,
+  WooEmulateStockPriceChanges,
+  WooEmulateStockStatus,
+  WooEmulateCatalogListParams,
+  WooEmulateListProductsParams,
+  WooEmulateListVariationsParams,
+  WooEmulateCategory,
+  WooEmulateTag,
+  WooEmulateGlobalAttribute,
+  WooEmulateAttributeTerm,
+  WooEmulateImage,
+  WooEmulateTermRef,
   WooEmulateWebhook,
   WooEmulateWebhookInput,
   WooEmulateWebhookStore,

@@ -6,6 +6,24 @@
 
 import { createOrderNote, deleteOrderNote, getOrderNote, listOrderNotes } from './handlers/notes.js'
 import { getOrder, listOrders, updateOrder } from './handlers/orders.js'
+import {
+  batchProducts,
+  batchVariations,
+  getAttribute,
+  getAttributeTerm,
+  getCategory,
+  getProduct,
+  getTag,
+  getVariation,
+  listAttributeTerms,
+  listAttributes,
+  listCategories,
+  listProducts,
+  listTags,
+  listVariations,
+  updateProduct,
+  updateVariation,
+} from './handlers/products.js'
 import { ordersTotalsReport } from './handlers/reports.js'
 import {
   createShipmentTracking,
@@ -53,6 +71,9 @@ export function editable(spec: MethodSpec): Partial<Record<HttpMethod, MethodSpe
 }
 
 const hasWebhooks = (config: WooEmulateConfig) => Boolean(config.webhooks?.store)
+type ProductHook = keyof NonNullable<WooEmulateConfig['adapter']['products']>
+const products = (hook: ProductHook) => (config: WooEmulateConfig) => Boolean(config.adapter.products?.[hook])
+const PRODUCT = '/products/(?P<product_id>[\\d]+)'
 
 const ROUTES: RouteSpec[] = [
   { path: '/system_status', methods: { GET: { handler: handleSystemStatus, action: 'view' } } },
@@ -99,6 +120,57 @@ const ROUTES: RouteSpec[] = [
   },
 
   { path: '/reports/orders/totals', methods: { GET: { handler: ordersTotalsReport, action: 'list' } } },
+
+  { path: '/products', methods: { GET: { handler: listProducts, action: 'list', enabled: products('listProducts') } } },
+  { path: '/products/batch', methods: editable({ handler: batchProducts, action: 'batch', enabled: products('updateProduct') }) },
+  {
+    path: '/products/categories',
+    methods: { GET: { handler: listCategories, action: 'list', enabled: products('listCategories') } },
+  },
+  {
+    path: `/products/categories/${ID}`,
+    methods: { GET: { handler: getCategory, action: 'view', enabled: products('listCategories') } },
+  },
+  { path: '/products/tags', methods: { GET: { handler: listTags, action: 'list', enabled: products('listTags') } } },
+  { path: `/products/tags/${ID}`, methods: { GET: { handler: getTag, action: 'view', enabled: products('listTags') } } },
+  {
+    path: '/products/attributes',
+    methods: { GET: { handler: listAttributes, action: 'list', enabled: products('listAttributes') } },
+  },
+  {
+    path: `/products/attributes/${ID}`,
+    methods: { GET: { handler: getAttribute, action: 'view', enabled: products('listAttributes') } },
+  },
+  {
+    path: '/products/attributes/(?P<attribute_id>[\\d]+)/terms',
+    methods: { GET: { handler: listAttributeTerms, action: 'list', enabled: products('listAttributeTerms') } },
+  },
+  {
+    path: `/products/attributes/(?P<attribute_id>[\\d]+)/terms/${ID}`,
+    methods: { GET: { handler: getAttributeTerm, action: 'view', enabled: products('listAttributeTerms') } },
+  },
+  {
+    path: `/products/${ID}`,
+    methods: {
+      GET: { handler: getProduct, action: 'view', enabled: products('getProduct') },
+      ...editable({ handler: updateProduct, action: 'edit', enabled: products('updateProduct') }),
+    },
+  },
+  {
+    path: `${PRODUCT}/variations`,
+    methods: { GET: { handler: listVariations, action: 'list', enabled: products('listVariations') } },
+  },
+  {
+    path: `${PRODUCT}/variations/batch`,
+    methods: editable({ handler: batchVariations, action: 'batch', enabled: products('updateVariation') }),
+  },
+  {
+    path: `${PRODUCT}/variations/${ID}`,
+    methods: {
+      GET: { handler: getVariation, action: 'view', enabled: products('getVariation') },
+      ...editable({ handler: updateVariation, action: 'edit', enabled: products('updateVariation') }),
+    },
+  },
 
   {
     path: '/webhooks',

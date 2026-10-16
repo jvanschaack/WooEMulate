@@ -105,3 +105,66 @@ export function recordingFetch(status = 200) {
   }
   return { calls, fetch }
 }
+
+/** In-memory catalog implementing the product adapter contract. */
+export function memoryCatalog() {
+  const products = [
+    {
+      id: 'prod_tee', wooCommerceId: 300, name: 'Logo Tee', sku: 'TEE', type: 'variable',
+      regularPriceCents: 2000, weightLb: 0.5, dimensionsIn: { length: 10, width: 8, height: 1 },
+      categories: [{ id: 5, name: 'Apparel', slug: 'apparel' }],
+      images: [{ id: 50, src: 'https://cdn.example/tee.jpg', alt: 'Tee' }],
+      attributes: [{ id: 1, name: 'Size', options: ['M', 'L'], variation: true }],
+      variationIds: [301, 302], createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-05T00:00:00Z',
+    },
+    {
+      id: 'prod_mug', wooCommerceId: 400, name: 'Coffee Mug', sku: 'MUG', regularPriceCents: 1500, salePriceCents: 1200,
+      manageStock: true, stockQuantity: 0, weightLb: 1.25, categories: [{ id: 6, name: 'Kitchen', slug: 'kitchen' }],
+      createdAt: '2026-01-02T00:00:00Z',
+    },
+  ]
+  const variations = {
+    300: [
+      { id: 'var_m', wooCommerceId: 301, sku: 'TEE-M', regularPriceCents: 2000, manageStock: true, stockQuantity: 4, attributes: [{ id: 1, name: 'Size', option: 'M' }] },
+      { id: 'var_l', wooCommerceId: 302, sku: 'TEE-L', regularPriceCents: 2200, manageStock: true, stockQuantity: 0, backorders: 'notify', attributes: [{ id: 1, name: 'Size', option: 'L' }], image: { id: 51, src: 'https://cdn.example/tee-l.jpg' } },
+    ],
+  }
+  const calls = { list: [], updates: [] }
+  const catalog = {
+    async listProducts(params) {
+      calls.list.push(params)
+      let rows = products
+      if (params.sku) rows = rows.filter((row) => params.sku.includes(row.sku))
+      if (params.include) rows = rows.filter((row) => params.include.includes(row.wooCommerceId))
+      return { products: rows.slice(params.offset, params.offset + params.perPage), totalCount: rows.length }
+    },
+    async getProduct(id) { return products.find((row) => row.wooCommerceId === id) || null },
+    async listVariations(product, params) {
+      const rows = variations[product.wooCommerceId] || []
+      return { variations: rows.slice(params.offset, params.offset + params.perPage), totalCount: rows.length }
+    },
+    async getVariation(product, id) { return (variations[product.wooCommerceId] || []).find((row) => row.wooCommerceId === id) || null },
+    async updateProduct(product, changes) {
+      calls.updates.push({ product: product.id, changes })
+      Object.assign(product, changes)
+    },
+    async updateVariation(product, variation, changes) {
+      calls.updates.push({ product: product.id, variation: variation.id, changes })
+      Object.assign(variation, changes)
+      return variation
+    },
+    async listCategories() {
+      return [
+        { id: 5, name: 'Apparel', slug: 'apparel', count: 1 },
+        { id: 6, name: 'Kitchen', slug: 'kitchen', count: 1 },
+        { id: 7, name: 'Hats', slug: 'hats', parent: 5, count: 0 },
+      ]
+    },
+    async listTags() { return [{ id: 9, name: 'Sale', slug: 'sale', count: 1 }] },
+    async listAttributes() { return [{ id: 1, name: 'Size' }] },
+    async listAttributeTerms(attributeId) {
+      return attributeId === 1 ? [{ id: 11, name: 'M', slug: 'm' }, { id: 12, name: 'L', slug: 'l' }] : []
+    },
+  }
+  return { catalog, products, variations, calls }
+}

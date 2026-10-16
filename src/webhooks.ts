@@ -6,9 +6,11 @@
 
 import { getWcNumericId } from './helpers.js'
 import { serializeWcOrder } from './serializer.js'
+import { serializeWcProduct } from './serializers/products.js'
 import type {
   WooEmulateConfig,
   WooEmulateOrder,
+  WooEmulateProduct,
   WooEmulateWebhook,
   WooEmulateWebhookApiVersion,
   WooEmulateWebhookDelivery,
@@ -145,6 +147,8 @@ export type ResourceSerializer = (
 export const RESOURCE_SERIALIZERS: Record<string, ResourceSerializer> = {
   order: (resource, config, version, apiBase) =>
     serializeWcOrder(resource as WooEmulateOrder, config.store, { version, apiBase }),
+  product: (resource, config, version, apiBase) =>
+    serializeWcProduct(resource as WooEmulateProduct, config.store, { version, apiBase }),
 }
 
 function resourceApiId(resource: unknown): number {
