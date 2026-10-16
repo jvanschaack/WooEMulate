@@ -50,6 +50,9 @@ function versionOf(namespace: string): ApiVersion {
 }
 
 export function createWooEmulate(config: WooEmulateConfig): WooEmulateInstance {
+  if (!config.auth && !config.apiKeys) {
+    throw new Error('WooEMulate requires API credentials: configure `auth`, `apiKeys`, or both.')
+  }
   if (config.store.timezone) assertTimeZone(config.store.timezone)
   const routes = compileRoutes()
 

@@ -470,6 +470,191 @@ export interface WooEmulateProductAdapter {
   listAttributeTerms?(attributeId: number): Promise<WooEmulateAttributeTerm[]>
 }
 
+export interface WooEmulateCustomer {
+  id: string | number
+  /** Stable, unique, persisted API ID. Required when id is not a positive numeric ID. */
+  wooCommerceId?: number
+  email: string
+  firstName?: string
+  lastName?: string
+  username?: string
+  /** WordPress role. Defaults to `customer`. */
+  role?: string
+  billing?: Partial<WooEmulateAddress>
+  shipping?: Partial<WooEmulateAddress>
+  isPayingCustomer?: boolean
+  avatarUrl?: string
+  /** Reported by v1/v2 routes only. */
+  ordersCount?: number
+  /** Reported by v1/v2 routes only. */
+  totalSpentCents?: number
+  createdAt?: string | Date
+  updatedAt?: string | Date
+  metadata?: Record<string, unknown>
+}
+
+export interface WooEmulateListCustomersParams {
+  page: number
+  perPage: number
+  offset: number
+  order: 'asc' | 'desc'
+  orderby: 'id' | 'include' | 'name' | 'registered_date'
+  search?: string
+  include?: number[]
+  exclude?: number[]
+  email?: string
+  /** WordPress role filter; omitted for all roles. */
+  role?: string
+}
+
+export interface WooEmulateCustomerAdapter {
+  listCustomers(params: WooEmulateListCustomersParams): Promise<{
+    customers: WooEmulateCustomer[]
+    totalCount: number
+    totalPages?: number
+  }>
+  /** Look up a customer by numeric API ID. */
+  getCustomer(id: number): Promise<WooEmulateCustomer | null>
+}
+
+export interface WooEmulateCoupon {
+  id: string | number
+  /** Stable, unique, persisted API ID. Required when id is not a positive numeric ID. */
+  wooCommerceId?: number
+  code: string
+  discountType: 'percent' | 'fixed_cart' | 'fixed_product'
+  /** Percentage for `percent` coupons. */
+  percentOff?: number
+  /** Amount for fixed coupons. */
+  amountCents?: number
+  status?: 'publish' | 'draft' | 'pending' | 'private' | 'future'
+  description?: string
+  expiresAt?: string | Date | null
+  usageCount?: number
+  usageLimit?: number | null
+  usageLimitPerUser?: number | null
+  limitUsageToXItems?: number | null
+  individualUse?: boolean
+  productIds?: number[]
+  excludedProductIds?: number[]
+  productCategories?: number[]
+  excludedProductCategories?: number[]
+  excludeSaleItems?: boolean
+  freeShipping?: boolean
+  minimumAmountCents?: number
+  maximumAmountCents?: number
+  emailRestrictions?: string[]
+  usedBy?: string[]
+  createdAt?: string | Date
+  updatedAt?: string | Date
+  metadata?: Record<string, unknown>
+}
+
+export interface WooEmulateListCouponsParams {
+  page: number
+  perPage: number
+  offset: number
+  order: 'asc' | 'desc'
+  orderby: 'date' | 'id' | 'include' | 'title' | 'slug' | 'modified'
+  search?: string
+  include?: number[]
+  exclude?: number[]
+  after?: string
+  before?: string
+  modifiedAfter?: string
+  modifiedBefore?: string
+  code?: string
+}
+
+export interface WooEmulateCouponAdapter {
+  listCoupons(params: WooEmulateListCouponsParams): Promise<{
+    coupons: WooEmulateCoupon[]
+    totalCount: number
+    totalPages?: number
+  }>
+  /** Look up a coupon by numeric API ID. */
+  getCoupon(id: number): Promise<WooEmulateCoupon | null>
+}
+
+export interface WooEmulateRefundLineItem {
+  /** Line item ID in the refund itself. */
+  id?: number
+  /** ID of the refunded order line item. */
+  refundedItemId?: number
+  name: string
+  productId?: number
+  variationId?: number
+  sku?: string
+  /** Positive quantity refunded; serialized as negative, as WooCommerce does. */
+  quantity: number
+  /** Positive amount refunded; serialized as negative. */
+  totalCents: number
+  taxCents?: number
+}
+
+export interface WooEmulateRefund {
+  /** Numeric refund ID. */
+  id: number
+  /** Positive refunded amount. */
+  amountCents: number
+  reason?: string
+  /** Numeric ID of the user who issued the refund; 0 when unknown. */
+  refundedBy?: number
+  /** True when the money was returned through the payment gateway. */
+  refundedPayment?: boolean
+  createdAt: string | Date
+  lineItems?: WooEmulateRefundLineItem[]
+  metadata?: Record<string, unknown>
+}
+
+export interface WooEmulateRefundInput {
+  amountCents: number
+  reason: string
+  /** WooCommerce `api_refund`: refund through the payment gateway. Defaults to true. */
+  refundPayment: boolean
+  /** WooCommerce `api_restock`: restock refunded items. Defaults to true. */
+  restockItems: boolean
+  lineItems: Array<{ lineItemId: number; quantity: number; refundTotalCents: number; refundTaxCents: number }>
+  refundedBy?: number
+}
+
+export interface WooEmulateReportsAdapter {
+  /** Paying and non-paying customer counts. Enables `/reports/customers/totals`. */
+  customersTotals?(): Promise<{ paying: number; nonPaying: number }>
+}
+
+export type WooEmulateKeyPermissions = 'read' | 'write' | 'read_write'
+
+export interface WooEmulateApiKey {
+  keyId: number
+  consumerKey: string
+  consumerSecret: string
+  permissions: WooEmulateKeyPermissions
+  description?: string
+  userId?: string | number
+}
+
+/** Persistent API keys with per-key permissions. */
+export interface WooEmulateApiKeyStore {
+  /** Look up a key by consumer key. Secrets are compared in constant time by the library. */
+  findApiKey(consumerKey: string): Promise<WooEmulateApiKey | null>
+  /**
+   * Persist a key minted by one-click authorization and return its numeric ID. When present,
+   * each connected app receives its own key with the requested scope.
+   */
+  createApiKey?(key: Omit<WooEmulateApiKey, 'keyId'> & { appName: string }): Promise<{ keyId: number }>
+  /** Delete a key; used when a one-click callback rejects the minted key. */
+  deleteApiKey?(keyId: number): Promise<void>
+}
+
+export interface WooEmulateOAuth1Config {
+  /**
+   * Record an OAuth 1.0a nonce. Return false when the consumer key already used this nonce
+   * within the last 15 minutes (replay protection). Required to enable OAuth 1.0a.
+   */
+  useNonce(consumerKey: string, nonce: string, timestamp: number): Promise<boolean>
+}
+
 export interface WooEmulateAdapter {
   /**
    * Return a paginated list of orders matching query filters.
@@ -516,6 +701,24 @@ export interface WooEmulateAdapter {
 
   /** Optional product catalog. Enables `/products` and related routes. */
   products?: WooEmulateProductAdapter
+
+  /** Optional customers. Enables `/customers`. */
+  customers?: WooEmulateCustomerAdapter
+
+  /** Optional coupons. Enables `/coupons`. */
+  coupons?: WooEmulateCouponAdapter
+
+  /** Lists an order's refunds. Enables `GET /orders/:id/refunds`. Receives the original order ID. */
+  listOrderRefunds?(orderId: string | number): Promise<WooEmulateRefund[]>
+
+  /**
+   * Creates a refund. Enables `POST /orders/:id/refunds`. This can move money: the host decides
+   * whether `refundPayment` returns funds through its payment gateway.
+   */
+  createOrderRefund?(orderId: string | number, refund: WooEmulateRefundInput): Promise<WooEmulateRefund>
+
+  /** Optional report data the library cannot compute from other hooks. */
+  reports?: WooEmulateReportsAdapter
 }
 
 export interface WooEmulateStoreConfig {
@@ -523,6 +726,23 @@ export interface WooEmulateStoreConfig {
   description?: string
   url: string
   currency?: string
+  /** Currency symbol position. Defaults to `left`. */
+  currencyPosition?: 'left' | 'right' | 'left_space' | 'right_space'
+  thousandSeparator?: string
+  decimalSeparator?: string
+  /** Price decimals. Defaults to 2. */
+  decimals?: number
+  /** Store address reported by `/settings/general`. */
+  address?: {
+    address1?: string
+    address2?: string
+    city?: string
+    state?: string
+    postalCode?: string
+    country?: string
+  }
+  /** Whether the store calculates taxes (`woocommerce_calc_taxes`). Defaults to false. */
+  calcTaxes?: boolean
   version?: string
   /** IANA time zone for plain `date_*` fields and date filters. Defaults to UTC. */
   timezone?: string
@@ -531,6 +751,10 @@ export interface WooEmulateStoreConfig {
 export interface WooEmulateAuthConfig {
   consumerKey: string
   consumerSecret: string
+  /** Defaults to `read_write`. */
+  permissions?: WooEmulateKeyPermissions
+  /** Reported as `key_id` to one-click callbacks. Defaults to 1. */
+  keyId?: number
 }
 
 export interface WooEmulateAuthResult {
@@ -641,9 +865,14 @@ export interface WooEmulateRequestContext {
 
 export interface WooEmulateConfig {
   store: WooEmulateStoreConfig
-  auth:
+  /** A single key pair or a custom resolver. Optional when `apiKeys` is configured. */
+  auth?:
     | WooEmulateAuthConfig
     | ((request: Request) => Promise<WooEmulateAuthConfig | WooEmulateAuthResult>)
+  /** Multiple keys with per-key permissions; checked before `auth`. */
+  apiKeys?: WooEmulateApiKeyStore
+  /** Enables one-legged OAuth 1.0a for clients that use plain-HTTP store URLs. Off by default. */
+  oauth1?: WooEmulateOAuth1Config
   adapter: WooEmulateAdapter
   /** One-click authorization is disabled unless explicitly configured. */
   oauth?: WooEmulateOAuthConfig

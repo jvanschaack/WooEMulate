@@ -24,7 +24,17 @@ import {
   updateProduct,
   updateVariation,
 } from './handlers/products.js'
-import { ordersTotalsReport } from './handlers/reports.js'
+import {
+  customersTotalsReport,
+  listReports,
+  ordersTotalsReport,
+  productsTotalsReport,
+  salesReport,
+  topSellersReport,
+} from './handlers/reports.js'
+import { createRefund, getRefund, listRefunds } from './handlers/refunds.js'
+import { getSetting, listSettingGroups, listSettings } from './handlers/settings.js'
+import { getCoupon, getCustomer, listCoupons, listCustomers } from './handlers/customers.js'
 import {
   createShipmentTracking,
   getShipmentTracking,
@@ -119,7 +129,41 @@ const ROUTES: RouteSpec[] = [
     methods: { GET: { handler: getShipmentTracking, action: 'view' } },
   },
 
+  {
+    path: `${ORDER}/refunds`,
+    methods: {
+      GET: { handler: listRefunds, action: 'list', enabled: (c) => !!c.adapter.listOrderRefunds },
+      POST: { handler: createRefund, action: 'create', enabled: (c) => !!c.adapter.createOrderRefund },
+    },
+  },
+  {
+    path: `${ORDER}/refunds/${ID}`,
+    methods: { GET: { handler: getRefund, action: 'view', enabled: (c) => !!c.adapter.listOrderRefunds } },
+  },
+
+  { path: '/customers', methods: { GET: { handler: listCustomers, action: 'list', enabled: (c) => !!c.adapter.customers } } },
+  { path: `/customers/${ID}`, methods: { GET: { handler: getCustomer, action: 'view', enabled: (c) => !!c.adapter.customers } } },
+  { path: '/coupons', methods: { GET: { handler: listCoupons, action: 'list', enabled: (c) => !!c.adapter.coupons } } },
+  { path: `/coupons/${ID}`, methods: { GET: { handler: getCoupon, action: 'view', enabled: (c) => !!c.adapter.coupons } } },
+
+  { path: '/reports', methods: { GET: { handler: listReports, action: 'list' } } },
+  { path: '/reports/sales', methods: { GET: { handler: salesReport, action: 'list' } } },
+  { path: '/reports/top_sellers', methods: { GET: { handler: topSellersReport, action: 'list' } } },
   { path: '/reports/orders/totals', methods: { GET: { handler: ordersTotalsReport, action: 'list' } } },
+  {
+    path: '/reports/products/totals',
+    methods: { GET: { handler: productsTotalsReport, action: 'list', enabled: products('listProducts') } },
+  },
+  {
+    path: '/reports/customers/totals',
+    methods: {
+      GET: { handler: customersTotalsReport, action: 'list', enabled: (c) => !!c.adapter.reports?.customersTotals },
+    },
+  },
+
+  { path: '/settings', methods: { GET: { handler: listSettingGroups, action: 'list' } } },
+  { path: '/settings/(?P<group_id>[\\w-]+)', methods: { GET: { handler: listSettings, action: 'list' } } },
+  { path: '/settings/(?P<group_id>[\\w-]+)/(?P<id>[\\w-]+)', methods: { GET: { handler: getSetting, action: 'view' } } },
 
   { path: '/products', methods: { GET: { handler: listProducts, action: 'list', enabled: products('listProducts') } } },
   { path: '/products/batch', methods: editable({ handler: batchProducts, action: 'batch', enabled: products('updateProduct') }) },

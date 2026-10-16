@@ -3,7 +3,7 @@
  * Credentials are released only after authenticated, same-origin owner approval.
  */
 import { wcErrorResponse } from '../auth.js'
-import type { WooEmulateConfig, WooEmulateOAuthAuthorizedPayload } from '../types.js'
+import type { WooEmulateApiKey, WooEmulateConfig, WooEmulateKeyPermissions, WooEmulateOAuthAuthorizedPayload } from '../types.js'
 
 const privateHeaders = {
   'Cache-Control': 'no-store',
@@ -17,6 +17,16 @@ function error(code: string, message: string, status: number): Response {
 }
 
 const REQUIRED_PARAMS = ['app_name', 'scope', 'user_id', 'return_url', 'callback_url'] as const
+const SCOPES: WooEmulateKeyPermissions[] = ['read', 'write', 'read_write']
+const SCOPE_TEXT: Record<WooEmulateKeyPermissions, string> = {
+  read: 'read',
+  write: 'write',
+  read_write: 'read and write',
+}
+
+function randomHex(bytes: number): string {
+  return Array.from(crypto.getRandomValues(new Uint8Array(bytes)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 function parseUrl(value: string | null, protocols: string[]): string | null {
   if (!value) return null
@@ -80,10 +90,16 @@ export async function handleOAuthAuthorize(
     return error('woocommerce_rest_oauth_url', 'Callback and return URLs must match configured HTTPS URLs.', 400)
   }
 
-  // The current key configuration has no per-key scope enforcement.
-  const scope = url.searchParams.get('scope') || 'read_write'
-  if (scope !== 'read_write') {
-    return error('woocommerce_rest_oauth_scope', 'Only read_write credentials are supported.', 400)
+  // With a key store that can mint keys, each app gets its own key with the requested scope.
+  // Otherwise the single configured key is shared, so the scope must match its permissions.
+  const scope = url.searchParams.get('scope') as WooEmulateKeyPermissions
+  if (!SCOPES.includes(scope)) {
+    return error('woocommerce_rest_oauth_scope', 'Invalid scope. Use read, write, or read_write.', 400)
+  }
+  const mintsKeys = Boolean(config.apiKeys?.createApiKey)
+  const sharedPermissions = config.auth && typeof config.auth === 'object' ? config.auth.permissions ?? 'read_write' : 'read_write'
+  if (!mintsKeys && scope !== sharedPermissions) {
+    return error('woocommerce_rest_oauth_scope', `Only ${sharedPermissions} credentials are available.`, 400)
   }
 
   const connection: WooEmulateOAuthAuthorizedPayload = {
@@ -140,8 +156,9 @@ export async function handleOAuthAuthorize(
       "</style>",
       '<title>Connect an app</title></head><body><main class="card">',
       '<h1>Connect ' + escapeHtml(connection.appName) + '</h1>',
-      '<p>Grant read and write API access to ' + escapeHtml(config.store.name) + '.</p>',
-      '<p>This shares the configured API credentials with <strong>' + escapeHtml(callbackUrl) + '</strong>.</p>',
+      '<p>Grant ' + SCOPE_TEXT[scope] + ' API access to ' + escapeHtml(config.store.name) + '.</p>',
+      '<p>' + (mintsKeys ? 'This creates API credentials for' : 'This shares the configured API credentials with') +
+        ' <strong>' + escapeHtml(callbackUrl) + '</strong>.</p>',
       '<form method="POST"><button class="btn btn-primary" type="submit">Approve Connection</button></form>',
       '<a class="btn btn-secondary" href="' + escapeHtml(denyUrl.href) + '">Deny Access</a>',
       '</main></body></html>',
@@ -152,16 +169,31 @@ export async function handleOAuthAuthorize(
   }
 
   // Resolve credentials only after explicit approval. Authentication failures never dispatch keys.
+  let minted: { keyId: number } | undefined
   try {
-    const credentials = typeof config.auth === 'function'
-      ? await config.auth(request)
-      : config.auth
-    if (
-      !('consumerKey' in credentials) ||
-      typeof credentials.consumerKey !== 'string' || !credentials.consumerKey ||
-      typeof credentials.consumerSecret !== 'string' || !credentials.consumerSecret
-    ) {
-      return error('woocommerce_rest_oauth_credentials', 'No API credentials are available for this connection.', 403)
+    let key: Pick<WooEmulateApiKey, 'keyId' | 'consumerKey' | 'consumerSecret'>
+    if (mintsKeys) {
+      const consumerKey = 'ck_' + randomHex(20)
+      const consumerSecret = 'cs_' + randomHex(20)
+      minted = await config.apiKeys!.createApiKey!({
+        consumerKey,
+        consumerSecret,
+        permissions: scope,
+        description: `${connection.appName.slice(0, 170)} - API (${new Date().toISOString().slice(0, 19).replace('T', ' ')})`,
+        userId: connection.userId,
+        appName: connection.appName,
+      })
+      key = { keyId: minted.keyId, consumerKey, consumerSecret }
+    } else {
+      const credentials = typeof config.auth === 'function' ? await config.auth(request) : config.auth
+      if (
+        !credentials || !('consumerKey' in credentials) ||
+        typeof credentials.consumerKey !== 'string' || !credentials.consumerKey ||
+        typeof credentials.consumerSecret !== 'string' || !credentials.consumerSecret
+      ) {
+        return error('woocommerce_rest_oauth_credentials', 'No API credentials are available for this connection.', 403)
+      }
+      key = { keyId: credentials.keyId ?? 1, consumerKey: credentials.consumerKey, consumerSecret: credentials.consumerSecret }
     }
 
     const callback = await fetch(callbackUrl, {
@@ -173,15 +205,16 @@ export async function handleOAuthAuthorize(
         'User-Agent': 'WooCommerce/' + (config.store.version || '8.5.0') + ' (' + config.store.name + ')',
       },
       body: JSON.stringify({
-        key_id: 1,
+        key_id: key.keyId,
         user_id: connection.userId,
-        consumer_key: credentials.consumerKey,
-        consumer_secret: credentials.consumerSecret,
+        consumer_key: key.consumerKey,
+        consumer_secret: key.consumerSecret,
         key_permissions: scope,
       }),
     })
     // WooCommerce accepts the callback only when it answers exactly HTTP 200.
     if (callback.status !== 200) {
+      await revoke(config, minted)
       return error('woocommerce_rest_oauth_dispatch_error', 'The callback did not accept the connection.', 502)
     }
 
@@ -194,7 +227,18 @@ export async function handleOAuthAuthorize(
       headers: { ...privateHeaders, Location: redirectTarget.href },
     })
   } catch {
+    await revoke(config, minted)
     return error('woocommerce_rest_oauth_dispatch_error', 'Failed to complete the connection.', 502)
+  }
+}
+
+/** Deletes a minted key whose callback failed, as WooCommerce does. */
+async function revoke(config: WooEmulateConfig, minted: { keyId: number } | undefined): Promise<void> {
+  if (!minted) return
+  try {
+    await config.apiKeys?.deleteApiKey?.(minted.keyId)
+  } catch {
+    // The connection already failed; a cleanup error must not change the response.
   }
 }
 
