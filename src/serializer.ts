@@ -3,13 +3,27 @@
  * Serializes generic store orders into strict WooCommerce REST API v3 schema.
  */
 
+import { wcDatePair } from './dates.js'
 import { formatCurrency, getWcNumericId, mapToWcStatus, splitName } from './helpers.js'
 import type { WooEmulateOrder, WooEmulateStoreConfig } from './types.js'
 
+export interface WcSerializeOptions {
+  /** REST namespace version that shapes the response. Defaults to v3. */
+  version?: 'v1' | 'v2' | 'v3'
+  /** Absolute namespace URL (for example `https://store.example/wp-json/wc/v3`) used for `_links`. */
+  apiBase?: string
+  /** Decimal places for money fields. Defaults to 2. */
+  dp?: number
+}
+
 export function serializeWcOrder(
   order: WooEmulateOrder,
-  storeConfig: WooEmulateStoreConfig
+  storeConfig: WooEmulateStoreConfig,
+  options: WcSerializeOptions = {}
 ): Record<string, any> {
+  const dp = options.dp ?? 2
+  const money = (cents?: number | null) => formatCurrency(cents, dp)
+  const timeZone = storeConfig.timezone || 'UTC'
   const numericId = getWcNumericId(order.wooCommerceId ?? order.id)
   const wcStatus = mapToWcStatus(order.status)
   const currency = order.currency || storeConfig.currency || 'USD'
@@ -126,18 +140,14 @@ export function serializeWcOrder(
     }
   }
 
-  const createdIso =
-    order.createdAt instanceof Date ? order.createdAt.toISOString() : String(order.createdAt)
-  const updatedIso = order.updatedAt
-    ? order.updatedAt instanceof Date
-      ? order.updatedAt.toISOString()
-      : String(order.updatedAt)
-    : createdIso
+  const created = wcDatePair(order.createdAt, timeZone)
+  const modified = order.updatedAt ? wcDatePair(order.updatedAt, timeZone) : created
+  const completed = wcDatePair(order.tracking?.dateShipped, timeZone)
 
-  const shippingCost = formatCurrency(order.shippingCents)
-  const totalCost = formatCurrency(order.totalCents)
-  const taxCost = formatCurrency(order.taxCents)
-  const discountCost = formatCurrency(order.discountCents)
+  const shippingCost = money(order.shippingCents)
+  const totalCost = money(order.totalCents)
+  const taxCost = money(order.taxCents)
+  const discountCost = money(order.discountCents)
 
   return {
     id: numericId,
@@ -148,15 +158,15 @@ export function serializeWcOrder(
     version: storeConfig.version || '8.5.0',
     status: wcStatus,
     currency,
-    date_created: createdIso,
-    date_created_gmt: createdIso,
-    date_modified: updatedIso,
-    date_modified_gmt: updatedIso,
+    date_created: created.local,
+    date_created_gmt: created.gmt,
+    date_modified: modified.local,
+    date_modified_gmt: modified.gmt,
     discount_total: discountCost,
-    discount_tax: '0.00',
+    discount_tax: money(0),
     shipping_total: shippingCost,
-    shipping_tax: '0.00',
-    cart_tax: '0.00',
+    shipping_tax: money(0),
+    cart_tax: money(0),
     total: totalCost,
     total_tax: taxCost,
     prices_include_tax: false,
@@ -169,10 +179,10 @@ export function serializeWcOrder(
     payment_method: order.paymentMethod || 'standard',
     payment_method_title: order.paymentMethodTitle || 'Credit Card',
     transaction_id: order.transactionId || '',
-    date_paid: createdIso,
-    date_paid_gmt: createdIso,
-    date_completed: order.tracking?.dateShipped ? String(order.tracking.dateShipped) : null,
-    date_completed_gmt: order.tracking?.dateShipped ? String(order.tracking.dateShipped) : null,
+    date_paid: created.local,
+    date_paid_gmt: created.gmt,
+    date_completed: completed.local,
+    date_completed_gmt: completed.gmt,
     cart_hash: '',
     meta_data: metaData,
     line_items: lineItems,

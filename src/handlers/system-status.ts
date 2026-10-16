@@ -3,23 +3,12 @@
  * Emulates the WooCommerce system status report required by certain diagnostic tools and partners.
  */
 
-import { authenticateRequest, wcErrorResponse } from '../auth.js'
-import type { WooEmulateConfig } from '../types.js'
+import { currencySymbol } from '../helpers.js'
+import { jsonResponse, type RouteContext } from '../http.js'
 
-export async function handleSystemStatus(
-  config: WooEmulateConfig,
-  request: Request
-): Promise<Response> {
-  const auth = await authenticateRequest(request, config)
-  if (!auth.authenticated) {
-    return wcErrorResponse(
-      'woocommerce_rest_cannot_view',
-      auth.error || 'Authentication required',
-      auth.status || 401
-    )
-  }
-
-  const origin = new URL(request.url).origin || config.store.url
+export async function handleSystemStatus(ctx: RouteContext): Promise<Response> {
+  const { config } = ctx
+  const origin = ctx.url.origin || config.store.url
   const wcVersion = config.store.version || '8.5.0'
 
   const statusReport = {
@@ -42,7 +31,7 @@ export async function handleSystemStatus(
       suhosin_installed: false,
       max_upload_size: 67108864,
       mysql_version: '8.0.32',
-      default_timezone: 'UTC',
+      default_timezone: config.store.timezone || 'UTC',
       fsockopen_or_curl_enabled: true,
       soapclient_enabled: true,
       domdocument_enabled: true,
@@ -94,7 +83,7 @@ export async function handleSystemStatus(
       api_enabled: true,
       force_ssl: true,
       currency: config.store.currency || 'USD',
-      currency_symbol: '$',
+      currency_symbol: currencySymbol(config.store.currency || 'USD'),
       currency_position: 'left',
       thousand_separator: ',',
       decimal_separator: '.',
@@ -109,11 +98,10 @@ export async function handleSystemStatus(
     },
   }
 
-  return new Response(JSON.stringify(statusReport), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-    },
-  })
+  return jsonResponse(statusReport)
+}
+
+/** WooCommerce lists maintenance tools here. The emulator has none to offer. */
+export async function handleSystemStatusTools(): Promise<Response> {
+  return jsonResponse([])
 }

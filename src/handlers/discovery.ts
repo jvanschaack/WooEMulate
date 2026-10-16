@@ -1,93 +1,96 @@
 /**
  * WooEMulate Discovery Handler
- * Advertises WordPress REST API and WooCommerce v1/v2/v3 namespaces at /wp-json.
+ * Builds the `/wp-json` index and namespace indexes from the enabled route table.
  */
 
+import { zoneOffsetMs } from '../dates.js'
+import { jsonResponse } from '../http.js'
+import { ALL_NAMESPACES, enabledMethods, type CompiledRoute } from '../routes.js'
 import type { WooEmulateConfig } from '../types.js'
 
-export function handleDiscovery(config: WooEmulateConfig, url: URL): Response {
-  const origin = url.origin || config.store.url
+type RouteIndex = Record<string, Record<string, unknown>>
 
-  const discoveryPayload = {
-    name: config.store.name,
-    description: config.store.description || `${config.store.name} REST API`,
-    url: origin,
-    home: origin,
-    namespaces: ['wc/v1', 'wc/v2', 'wc/v3'],
-    authentication: {
-      oauth1: false,
-      application_passwords: false,
-      basic_auth: true,
-    },
-    routes: {
-      '/': {
-        namespace: '',
-        methods: ['GET'],
-        endpoints: [{ methods: ['GET'], args: {} }],
-        _links: { self: [{ href: `${origin}/wp-json/` }] },
-      },
-      '/wc/v1': {
-        namespace: 'wc/v1',
-        methods: ['GET'],
-        endpoints: [{ methods: ['GET'], args: {} }],
-        _links: { self: [{ href: `${origin}/wp-json/wc/v1` }] },
-      },
-      '/wc/v2': {
-        namespace: 'wc/v2',
-        methods: ['GET'],
-        endpoints: [{ methods: ['GET'], args: {} }],
-        _links: { self: [{ href: `${origin}/wp-json/wc/v2` }] },
-      },
-      '/wc/v3': {
-        namespace: 'wc/v3',
-        methods: ['GET'],
-        endpoints: [{ methods: ['GET'], args: {} }],
-        _links: { self: [{ href: `${origin}/wp-json/wc/v3` }] },
-      },
-      '/wc/v3/system_status': {
-        namespace: 'wc/v3',
-        methods: ['GET'],
-        endpoints: [{ methods: ['GET'], args: {} }],
-        _links: { self: [{ href: `${origin}/wp-json/wc/v3/system_status` }] },
-      },
-      '/wc/v3/orders': {
-        namespace: 'wc/v3',
-        methods: ['GET'],
-        endpoints: [
-          {
-            methods: ['GET'],
-            args: {
-              status: { required: false },
-              per_page: { required: false },
-              page: { required: false },
-            },
-          },
-        ],
-        _links: { self: [{ href: `${origin}/wp-json/wc/v3/orders` }] },
-      },
-      '/wc/v3/orders/(?P<id>[\\d]+)': {
-        namespace: 'wc/v3',
-        methods: ['GET', 'POST', 'PUT'],
-        endpoints: [
-          { methods: ['GET'], args: {} },
-          { methods: ['PUT'], args: {} },
-          { methods: ['POST'], args: {} },
-        ],
-        _links: { self: [{ href: `${origin}/wp-json/wc/v3/orders` }] },
-      },
-    },
-    _links: {
-      help: [{ href: 'https://woo.com/document/woocommerce-rest-api/' }],
+function routeEntries(
+  config: WooEmulateConfig,
+  routes: CompiledRoute[],
+  apiBase: string,
+  namespace: string
+): RouteIndex {
+  const entries: RouteIndex = {
+    [`/${namespace}`]: {
+      namespace,
+      methods: ['GET'],
+      endpoints: [{ methods: ['GET'], args: { namespace: { default: namespace, required: false } } }],
+      _links: { self: [{ href: `${apiBase}/${namespace}` }] },
     },
   }
+  for (const route of routes) {
+    if (!route.namespaces.includes(namespace)) continue
+    const methods = enabledMethods(route, config)
+    if (methods.length === 0) continue
+    // Group methods that share a handler, as WordPress lists one endpoint per callback.
+    const groups = new Map<unknown, string[]>()
+    for (const method of methods) {
+      const handler = route.methods[method]!.handler
+      groups.set(handler, [...(groups.get(handler) || []), method])
+    }
+    const path = `/${namespace}${route.path}`
+    entries[path] = {
+      namespace,
+      methods,
+      endpoints: [...groups.values()].map((group) => ({ methods: group, args: {} })),
+      ...(route.path.includes('(?P<') ? {} : { _links: { self: [{ href: `${apiBase}${path}` }] } }),
+    }
+  }
+  return entries
+}
 
-  return new Response(JSON.stringify(discoveryPayload), {
-    status: 200,
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-      'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-WP-Nonce',
+function activeNamespaces(config: WooEmulateConfig, routes: CompiledRoute[]): string[] {
+  return ALL_NAMESPACES.filter((namespace) =>
+    routes.some((route) => route.namespaces.includes(namespace) && enabledMethods(route, config).length > 0)
+  )
+}
+
+export function handleDiscovery(config: WooEmulateConfig, routes: CompiledRoute[], apiBase: string, home: string): Response {
+  const timeZone = config.store.timezone || 'UTC'
+  const namespaces = activeNamespaces(config, routes)
+  let indexRoutes: RouteIndex = {
+    '/': {
+      namespace: '',
+      methods: ['GET'],
+      endpoints: [{ methods: ['GET'], args: { context: { default: 'view', required: false } } }],
+      _links: { self: [{ href: `${apiBase}/` }] },
     },
+  }
+  for (const namespace of namespaces) {
+    indexRoutes = { ...indexRoutes, ...routeEntries(config, routes, apiBase, namespace) }
+  }
+
+  return jsonResponse({
+    name: config.store.name,
+    description: config.store.description || `${config.store.name} REST API`,
+    url: home,
+    home,
+    gmt_offset: String(zoneOffsetMs(new Date(), timeZone) / 3_600_000),
+    timezone_string: timeZone === 'UTC' ? '' : timeZone,
+    namespaces,
+    authentication: [],
+    routes: indexRoutes,
+    _links: {
+      help: [{ href: 'https://developer.wordpress.org/rest-api/' }],
+    },
+  })
+}
+
+export function handleNamespaceIndex(
+  config: WooEmulateConfig,
+  routes: CompiledRoute[],
+  apiBase: string,
+  namespace: string
+): Response {
+  return jsonResponse({
+    namespace,
+    routes: routeEntries(config, routes, apiBase, namespace),
+    _links: { up: [{ href: `${apiBase}/` }] },
   })
 }

@@ -192,7 +192,7 @@ test('callback and return URLs require exact configured HTTPS matches', async (t
 })
 
 test('approved POST dispatches keys once to the allowed callback and reports success', async (t) => {
-  const fetch = t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 201 }))
+  const fetch = t.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 200 }))
   const { config } = fixture()
   let authorized = 0
   config.adapter.onOAuthAuthorized = async (payload) => { assert.equal(payload.userId, '42'); authorized++ }
@@ -214,7 +214,8 @@ test('failed or redirected callbacks never report success or follow redirects', 
   let authorized = false
   config.adapter.onOAuthAuthorized = async () => { authorized = true }
   enableOAuth(config)
-  for (const status of [400, 500, 302, 307]) {
+  // WooCommerce accepts only HTTP 200 from the callback.
+  for (const status of [201, 204, 400, 500, 302, 307]) {
     fetch.mock.mockImplementation(async () => new Response(null, { status }))
     const response = await createWooEmulate(config).handleRequest(connectionRequest('POST', {}, { Origin: origin }))
     assert.equal(response.status, 502)
@@ -247,5 +248,7 @@ test('discovery advertises only supported order methods and namespaces', async (
   assert.ok(!discovery.namespaces.includes('wp/v2'))
   assert.deepEqual(discovery.routes['/wc/v3/orders'].methods, ['GET'])
   assert.ok(!discovery.routes['/wc/v3/orders/(?P<id>[\\d]+)'].methods.includes('DELETE'))
-  assert.equal((await api(emulator, '/orders', 'POST', {})).status, 405)
+  const unsupported = await api(emulator, '/orders', 'POST', {})
+  assert.equal(unsupported.status, 404)
+  assert.equal((await unsupported.json()).code, 'rest_no_route')
 })

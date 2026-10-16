@@ -6,7 +6,7 @@
  */
 
 export { createWooEmulate, type WooEmulateInstance } from './router.js'
-export { serializeWcOrder } from './serializer.js'
+export { serializeWcOrder, type WcSerializeOptions } from './serializer.js'
 export { authenticateRequest, wcErrorResponse } from './auth.js'
 export {
   getWcNumericId,
@@ -16,6 +16,7 @@ export {
   detectCarrier,
   getTrackingUrl,
   formatCurrency,
+  currencySymbol,
 } from './helpers.js'
 
 export type {
@@ -34,4 +35,6 @@ export type {
   WooEmulateListOrdersResult,
   WooEmulateOrderStatus,
   WooEmulateOAuthAuthorizedPayload,
+  WooEmulateRequestEvent,
+  WooEmulateRequestContext,
 } from './types.js'

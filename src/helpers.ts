@@ -93,7 +93,23 @@ export function getTrackingUrl(trackingNumber: string, carrier?: string): string
 /**
  * Formats cents into two-decimal string format.
  */
-export function formatCurrency(cents?: number | null): string {
-  if (typeof cents !== 'number' || isNaN(cents)) return '0.00'
-  return (cents / 100).toFixed(2)
+export function formatCurrency(cents?: number | null, decimals = 2): string {
+  if (typeof cents !== 'number' || isNaN(cents)) return (0).toFixed(decimals)
+  return (cents / 100).toFixed(decimals)
+}
+
+/**
+ * Returns the narrow symbol for an ISO 4217 currency code (for example `$` for USD).
+ */
+export function currencySymbol(currency: string): string {
+  try {
+    const parts = new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+    }).formatToParts(0)
+    return parts.find((part) => part.type === 'currency')?.value || currency
+  } catch {
+    return currency
+  }
 }

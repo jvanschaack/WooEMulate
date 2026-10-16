@@ -16,15 +16,35 @@ function error(code: string, message: string, status: number): Response {
   return wcErrorResponse(code, message, status, privateHeaders)
 }
 
-function httpsUrl(value: string | null): string | null {
+const REQUIRED_PARAMS = ['app_name', 'scope', 'user_id', 'return_url', 'callback_url'] as const
+
+function parseUrl(value: string | null, protocols: string[]): string | null {
   if (!value) return null
+  // WooCommerce URL-decodes these parameters again, so accept values that were encoded twice.
+  let candidate = value.trim()
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(candidate) && /%[0-9a-f]{2}/i.test(candidate)) {
+    try {
+      candidate = decodeURIComponent(candidate)
+    } catch {
+      return null
+    }
+  }
   try {
-    const url = new URL(value)
-    if (url.protocol !== 'https:' || url.username || url.password || url.hash) return null
+    const url = new URL(candidate)
+    if (!protocols.includes(url.protocol) || url.username || url.password || url.hash) return null
     return url.href
   } catch {
     return null
   }
+}
+
+function httpsUrl(value: string | null): string | null {
+  return parseUrl(value, ['https:'])
+}
+
+/** WooCommerce requires an HTTPS callback but allows an HTTP return URL. */
+function returnUrlOf(value: string | null): string | null {
+  return parseUrl(value, ['https:', 'http:'])
 }
 
 export async function handleOAuthAuthorize(
@@ -45,12 +65,17 @@ export async function handleOAuthAuthorize(
     return error('woocommerce_rest_oauth_origin', 'Authorization must use the configured HTTPS store origin.', 403)
   }
 
+  const missing = REQUIRED_PARAMS.find((name) => !url.searchParams.get(name))
+  if (missing) {
+    return error('woocommerce_rest_oauth_missing_param', `Missing parameter ${missing}.`, 400)
+  }
+
   const callbackUrl = httpsUrl(url.searchParams.get('callback_url'))
-  const returnUrl = httpsUrl(url.searchParams.get('return_url'))
+  const returnUrl = returnUrlOf(url.searchParams.get('return_url'))
   if (
     !callbackUrl || !returnUrl ||
     !oauth.allowedCallbackUrls.some((allowed) => httpsUrl(allowed) === callbackUrl) ||
-    !oauth.allowedReturnUrls.some((allowed) => httpsUrl(allowed) === returnUrl)
+    !oauth.allowedReturnUrls.some((allowed) => returnUrlOf(allowed) === returnUrl)
   ) {
     return error('woocommerce_rest_oauth_url', 'Callback and return URLs must match configured HTTPS URLs.', 400)
   }
@@ -62,8 +87,8 @@ export async function handleOAuthAuthorize(
   }
 
   const connection: WooEmulateOAuthAuthorizedPayload = {
-    appName: url.searchParams.get('app_name') || 'Connected App',
-    userId: url.searchParams.get('user_id') || '1',
+    appName: url.searchParams.get('app_name')!,
+    userId: url.searchParams.get('user_id')!,
     scope,
     callbackUrl,
     returnUrl,
@@ -74,11 +99,23 @@ export async function handleOAuthAuthorize(
     return error('woocommerce_rest_oauth_origin', 'Approval requires a same-origin POST.', 403)
   }
 
+  let authorized = false
   try {
-    if (await oauth.authorize(request, connection) !== true) {
-      return error('woocommerce_rest_oauth_forbidden', 'Store-owner authorization is required.', 403)
-    }
+    authorized = (await oauth.authorize(request, connection)) === true
   } catch {
+    authorized = false
+  }
+  if (!authorized) {
+    if (request.method === 'GET' && oauth.loginUrl) {
+      try {
+        const login = new URL(oauth.loginUrl(url.href), storeUrl)
+        if (login.protocol === 'https:' || login.protocol === 'http:') {
+          return new Response(null, { status: 302, headers: { ...privateHeaders, Location: login.href } })
+        }
+      } catch {
+        // Fall through to the error below.
+      }
+    }
     return error('woocommerce_rest_oauth_forbidden', 'Store-owner authorization is required.', 403)
   }
 
@@ -130,7 +167,7 @@ export async function handleOAuthAuthorize(
     const callback = await fetch(callbackUrl, {
       method: 'POST',
       redirect: 'manual',
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(oauth.callbackTimeoutMs ?? 30_000),
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
         'User-Agent': 'WooCommerce/' + (config.store.version || '8.5.0') + ' (' + config.store.name + ')',
@@ -143,7 +180,8 @@ export async function handleOAuthAuthorize(
         key_permissions: scope,
       }),
     })
-    if (!callback.ok) {
+    // WooCommerce accepts the callback only when it answers exactly HTTP 200.
+    if (callback.status !== 200) {
       return error('woocommerce_rest_oauth_dispatch_error', 'The callback did not accept the connection.', 502)
     }
 
