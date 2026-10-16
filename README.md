@@ -255,6 +255,8 @@ The repository includes local API tests. Those tests do not establish end-to-end
 
 To contribute a verified integration, document the service and version/date tested, required endpoints, connection method, and successful import/update scenarios. Include sanitized request/response fixtures where possible.
 
+For a survey of other services with WooCommerce connections (shipping, automation, ETL, inventory, accounting, helpdesk, and print-on-demand), how each one connects, and what it would need, see [docs/integration-research.md](docs/integration-research.md). Planned work is in [docs/roadmap.md](docs/roadmap.md). Neither document claims verified compatibility.
+
 ## Limitations and migration notes
 
 - **Previous automatic authorization:** public GET requests no longer dispatch credentials. Configure owner-approved authorization explicitly or use manual API keys where supported. Rotate credentials if an earlier unprotected authorization route was publicly exposed.
