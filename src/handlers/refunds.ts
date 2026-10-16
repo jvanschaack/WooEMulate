@@ -136,12 +136,27 @@ export async function createRefund(ctx: RouteContext): Promise<Response> {
       refundTaxCents: (previous?.refundTaxCents ?? 0) + refundTaxCents,
     })
   }
+  let prior: WooEmulateRefund[]
+  try {
+    prior = await existingRefunds(ctx, order)
+  } catch (err) {
+    return refundError(errorMessage(err, 'Failed to read existing refunds.'), 500)
+  }
+  // Units already refunded (and possibly restocked) cannot be refunded again.
+  const refundedQuantity = new Map<number, number>()
+  for (const refund of prior) {
+    for (const item of refund.lineItems ?? []) {
+      if (item.refundedItemId) {
+        refundedQuantity.set(item.refundedItemId, (refundedQuantity.get(item.refundedItemId) ?? 0) + Math.abs(item.quantity))
+      }
+    }
+  }
   const lineItems: WooEmulateRefundInput['lineItems'] = []
   for (const { index, ...item } of merged.values()) {
     const line = orderLines.find((row) => row.id === item.lineItemId)
     if (!line && !otherLineIds.has(item.lineItemId)) errors.add(`line_items[${index}][id]`, 'Invalid line item ID.')
-    else if (line && item.quantity > line.quantity) {
-      errors.add(`line_items[${index}][quantity]`, 'Quantity exceeds the ordered quantity.')
+    else if (line && item.quantity > line.quantity - (refundedQuantity.get(item.lineItemId) ?? 0)) {
+      errors.add(`line_items[${index}][quantity]`, 'Quantity exceeds the remaining refundable quantity.')
     }
     lineItems.push(item)
   }
@@ -153,7 +168,7 @@ export async function createRefund(ctx: RouteContext): Promise<Response> {
   if (!Number.isFinite(order.totalCents)) return refundError('Invalid refund amount.')
 
   try {
-    const refunded = (await existingRefunds(ctx, order)).reduce((sum, refund) => sum + refund.amountCents, 0) ||
+    const refunded = prior.reduce((sum, refund) => sum + refund.amountCents, 0) ||
       (order.refunds ?? []).reduce((sum, refund) => sum + refund.totalCents, 0)
     if (amountCents > order.totalCents - refunded) return refundError('Invalid refund amount.')
 

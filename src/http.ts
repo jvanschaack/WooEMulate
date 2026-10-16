@@ -176,7 +176,9 @@ export function readList(url: URL, name: string): string[] | undefined {
   for (const [key, value] of url.searchParams) {
     if (key === name || indexed.test(key)) values.push(value)
   }
-  const list = values.flatMap((value) => value.split(',')).map((value) => value.trim()).filter(Boolean)
+  // Deduplicate: some clients (including WooCommerce's JavaScript client over OAuth) repeat
+  // query parameters.
+  const list = [...new Set(values.flatMap((value) => value.split(',')).map((value) => value.trim()).filter(Boolean))]
   return list.length ? list : undefined
 }
 

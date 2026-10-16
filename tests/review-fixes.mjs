@@ -181,3 +181,54 @@ test('wall-clock times in a DST gap move forward, as in PHP', async () => {
   assert.equal(calls.at(-1).after, '2026-03-08T07:30:00.000Z')
   assert.equal(calls.at(-1).before, '2026-11-01T05:30:00.000Z')
 })
+
+// Regressions for Codex review findings on the pull request.
+
+test('refund quantities account for units already refunded', async () => {
+  const order = makeOrder(1, { totalCents: 4000, items: [{ id: 11, name: 'Mug', quantity: 2, unitPriceCents: 2000 }] })
+  const { adapter } = memoryAdapter([order])
+  const created = []
+  adapter.listOrderRefunds = async () => [
+    { id: 70, amountCents: 2000, createdAt: '2026-01-02T00:00:00Z', lineItems: [{ refundedItemId: 11, name: 'Mug', quantity: 1, totalCents: 2000 }] },
+  ]
+  adapter.createOrderRefund = async (id, input) => { created.push(input); return { id: 71, amountCents: input.amountCents, createdAt: new Date() } }
+  const api = createWooEmulate({ store: { name: 'Example', url: origin }, auth, adapter })
+  const again = await request(api, '/wc/v3/orders/1001/refunds', {
+    method: 'POST', body: { line_items: [{ id: 11, quantity: 2, refund_total: '20.00' }] },
+  })
+  assert.equal(again.status, 400)
+  assert.match(JSON.stringify(await again.json()), /remaining refundable quantity/)
+  const remaining = await request(api, '/wc/v3/orders/1001/refunds', {
+    method: 'POST', body: { line_items: [{ id: 11, quantity: 1, refund_total: '20.00' }] },
+  })
+  assert.equal(remaining.status, 201)
+  assert.equal(created.length, 1)
+})
+
+test('OAuth signatures cover repeated query parameters', async () => {
+  const { createHmac } = await import('node:crypto')
+  const nonces = new Set()
+  const { emulator, calls } = setup(undefined, { oauth1: { useNonce: async (k, n) => (nonces.has(n) ? false : (nonces.add(n), true)) } })
+  const enc = (v) => encodeURIComponent(v).replace(/[!'()*]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase())
+  const target = new URL('http://store.example/wp-json/wc/v3/orders?status[]=processing&status[]=completed')
+  const oauth = { oauth_consumer_key: auth.consumerKey, oauth_nonce: 'dup', oauth_timestamp: String(Math.floor(Date.now() / 1000)), oauth_signature_method: 'HMAC-SHA256' }
+  const pairs = [...target.searchParams, ...Object.entries(oauth)].map(([k, v]) => [enc(k), enc(v)]).sort(([ak, av], [bk, bv]) => (ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : 1))
+  const base = ['GET', enc(target.origin + target.pathname), enc(pairs.map(([k, v]) => `${k}=${v}`).join('&'))].join('&')
+  const signature = createHmac('sha256', `${auth.consumerSecret}&`).update(base).digest('base64')
+  for (const [key, value] of Object.entries({ ...oauth, oauth_signature: signature })) target.searchParams.set(key, value)
+  const response = await emulator.handleRequest(new Request(target))
+  assert.equal(response.status, 200)
+  assert.deepEqual(calls.at(-1).status, ['processing', 'completed'])
+})
+
+test('impossible calendar dates in filters are rejected instead of rolling over', async () => {
+  const { emulator } = setup()
+  for (const value of ['2026-02-31T00:00:00', '2026-02-31T00:00:00Z', '2026-02-31T00:00:00%2B02:00', '2026-02-03T24:00:00', '2026-13-01T00:00:00', '2026-02-03T10:61:00']) {
+    const response = await request(emulator, '/wc/v3/orders', { query: `after=${value}` })
+    assert.equal(response.status, 400, value)
+    assert.equal((await response.json()).code, 'rest_invalid_param')
+  }
+  const zoned = createWooEmulate({ store: { name: 'x', url: origin, timezone: 'America/Chicago' }, auth, adapter: memoryAdapter([]).adapter })
+  assert.equal((await request(zoned, '/wc/v3/orders', { query: 'after=2026-02-29T00:00:00' })).status, 400)
+  assert.equal((await request(zoned, '/wc/v3/orders', { query: 'after=2028-02-29T00:00:00' })).status, 200)
+})

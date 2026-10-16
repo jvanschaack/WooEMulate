@@ -225,10 +225,16 @@ function oauthError(message: string): AuthOutcome {
   return { status: 'error', code: 'woocommerce_rest_authentication_error', message, httpStatus: 401 }
 }
 
-/** Builds WooCommerce's OAuth 1.0a signature base string. */
-export function oauthBaseString(method: string, url: URL, params: Record<string, string>): string {
-  const keys = Object.keys(params).filter((key) => key !== 'oauth_signature').sort()
-  const pairs = keys.map((key) => rfc3986(`${rfc3986(key)}=${rfc3986(params[key])}`))
+/**
+ * Builds the OAuth 1.0a signature base string. Every parameter pair is kept, including repeated
+ * names, and pairs are sorted by encoded name and then encoded value (RFC 5849, section 3.4.1.3).
+ */
+export function oauthBaseString(method: string, url: URL, params: Array<[string, string]>): string {
+  const encoded = params
+    .filter(([key]) => key !== 'oauth_signature')
+    .map(([key, value]) => [rfc3986(key), rfc3986(value)] as const)
+    .sort(([ak, av], [bk, bv]) => (ak < bk ? -1 : ak > bk ? 1 : av < bv ? -1 : av > bv ? 1 : 0))
+  const pairs = encoded.map(([key, value]) => rfc3986(`${key}=${value}`))
   return `${method.toUpperCase()}&${rfc3986(url.origin + url.pathname)}&${pairs.join('%26')}`
 }
 
@@ -244,15 +250,20 @@ async function hmacBase64(algorithm: 'SHA-1' | 'SHA-256', key: string, data: str
 /** Returns null when the request carries no OAuth 1.0a parameters. */
 async function authenticateOAuth1(request: Request, config: WooEmulateConfig): Promise<AuthOutcome | null> {
   const url = new URL(request.url)
-  const params: Record<string, string> = {}
-  for (const [key, value] of url.searchParams) params[key] = value
+  let pairs: Array<[string, string]> = [...url.searchParams]
   if (
     request.method !== 'GET' && request.method !== 'HEAD' &&
     (request.headers.get('content-type') || '').includes('application/x-www-form-urlencoded')
   ) {
-    for (const [key, value] of new URLSearchParams(await request.clone().text())) params[key] = value
+    pairs.push(...new URLSearchParams(await request.clone().text()))
   }
-  Object.assign(params, readOAuthHeader(request))
+  // Header parameters replace same-named query or body parameters.
+  const header = readOAuthHeader(request)
+  if (Object.keys(header).length) {
+    pairs = [...pairs.filter(([key]) => !(key in header)), ...Object.entries(header)]
+  }
+  const params: Record<string, string> = {}
+  for (const [key, value] of pairs) params[key] ??= value
   if (!params.oauth_consumer_key) return null
 
   const missing = OAUTH_REQUIRED.filter((name) => !params[name])
@@ -266,18 +277,28 @@ async function authenticateOAuth1(request: Request, config: WooEmulateConfig): P
   if (method !== 'HMAC-SHA1' && method !== 'HMAC-SHA256') {
     return oauthError('Invalid signature - signature method is invalid.')
   }
-  const expected = await hmacBase64(
-    method === 'HMAC-SHA1' ? 'SHA-1' : 'SHA-256',
-    `${key.consumerSecret}&`,
-    oauthBaseString(request.method, url, params)
-  )
+  // Two normalizations can be valid. RFC 5849 signs every pair, including repeated names.
+  // WooCommerce (PHP) keeps the last value of a repeated name, and its official JavaScript
+  // client relies on that: it sends query parameters twice but signs them once.
+  const candidates = [pairs]
+  const lastWins = new Map(pairs)
+  if (lastWins.size !== pairs.length) candidates.push([...lastWins])
   let provided = params.oauth_signature.replace(/ /g, '+')
   try {
     provided = decodeURIComponent(provided)
   } catch {
     // keep the raw value
   }
-  if (!timingSafeEqual(provided, expected)) {
+  let valid = false
+  for (const candidate of candidates) {
+    const expected = await hmacBase64(
+      method === 'HMAC-SHA1' ? 'SHA-1' : 'SHA-256',
+      `${key.consumerSecret}&`,
+      oauthBaseString(request.method, url, candidate)
+    )
+    if (timingSafeEqual(provided, expected)) valid = true
+  }
+  if (!valid) {
     return oauthError('Invalid signature - provided signature does not match.')
   }
 

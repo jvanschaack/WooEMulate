@@ -73,10 +73,25 @@ export function zoneOffsetMs(date: Date, timeZone: string): number {
   return asUtc - Math.floor(date.getTime() / 1000) * 1000
 }
 
+/**
+ * True when the leading date and time components are real calendar values. `Date.UTC` and
+ * `Date.parse` silently roll over values such as February 31 or 24:00.
+ */
+function hasValidComponents(text: string): boolean {
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/)
+  if (!match) return false
+  const [y, mo, d, h = 0, mi = 0, s = 0] = match.slice(1).map((part) => (part === undefined ? 0 : Number(part)))
+  const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s))
+  return (
+    date.getUTCFullYear() === y && date.getUTCMonth() === mo - 1 && date.getUTCDate() === d &&
+    date.getUTCHours() === h && date.getUTCMinutes() === mi && date.getUTCSeconds() === s
+  )
+}
+
 /** Interprets a wall-clock time (no offset) in the given time zone. */
 export function wallTimeToDate(text: string, timeZone: string): Date | null {
   const match = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?$/)
-  if (!match) return null
+  if (!match || !hasValidComponents(text)) return null
   const [, y, mo, d, h = '0', mi = '0', s = '0'] = match
   const asUtc = Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s))
   if (isNaN(asUtc)) return null
@@ -97,6 +112,7 @@ export function wallTimeToDate(text: string, timeZone: string): Date | null {
 export function parseDateParam(value: string, datesAreGmt: boolean, timeZone: string): Date | null {
   const text = value.trim()
   if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(text) && /T/.test(text)) {
+    if (!hasValidComponents(text)) return null
     const date = new Date(text)
     return isNaN(date.getTime()) ? null : date
   }
